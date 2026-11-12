@@ -1,43 +1,12 @@
-// server.js
-import 'dotenv/config';
-import express from 'express';
-import session from 'express-session';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import pkg from 'pg';
-const { Pool } = pkg;
 
-// Configuración para usar __dirname con ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const app = express();
 
-// 1. Configurar la conexión a tu base de datos de Supabase usando variables de entorno o tu cadena directa
-const conexionDB = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:Workguard20026w@db.hqgjlhyhsyocaaxmafzg.supabase.co:5432/postgres',
-    ssl: { rejectUnauthorized: false } // Obligatorio para conectar de forma segura a Supabase
-});
-
-// 2. Middlewares básicos
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
-app.use(session({
-    secret: 'clave_secreta_super_segura_123',
-    resave: false,
-    saveUninitialized: false
-}));
-
-app.use(express.static(__dirname));
 
 // ==========================================
 // RUTAS DE NAVEGACIÓN Y LOGIN
 // ==========================================
 
-// Mostrar el HTML de login
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'login.html'));
-});
 
 // Procesar el login
 app.post('/login', async (req, res) => {
@@ -285,10 +254,11 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Encender servidor en puerto 3001 (o el que prefieras)
+
+//Servidor//
+import app from './src/app.js';
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en http://localhost:${PORT}/login`);
 });
-
-// http://localhost:3001/consultor/dashboard?id=1
