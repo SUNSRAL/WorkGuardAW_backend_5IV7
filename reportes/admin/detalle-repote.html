@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WorkGuard - Detalle del Reporte</title>
+    <link rel="stylesheet" href="/reportes/admin/admindash.css">
+    <link rel="stylesheet" href="/reportes/admin/detalle-reporte.css">
+</head>
+<body>
+
+    <header class="admin-header">
+        <div class="logo-container">
+            <img src="/reportes/img/workguard.png" alt="WorkGuard Logo">
+        </div>
+    </header>
+
+    <main class="admin-main">
+        <div class="reports-container">
+            <a href="/admin/reportes" class="detalle-volver">&larr; Volver al Centro de Reportes</a>
+
+            <p id="mensajeDetalle" class="report-text">Cargando reporte...</p>
+
+            <div class="detalle-card" id="detalleCard" hidden>
+                <div class="detalle-titulo">
+                    <h1 id="detalleTitulo">Reporte</h1>
+                    <span class="detalle-estado" id="detalleEstado"></span>
+                </div>
+
+                <div class="detalle-grid">
+                    <div class="detalle-campo"><span>Empresa reportada</span><p id="dEmpresa"></p></div>
+                    <div class="detalle-campo"><span>Tipo de persona</span><p id="dTipoPersona"></p></div>
+                    <div class="detalle-campo"><span>Número de trabajadores</span><p id="dTrabajadores"></p></div>
+                    <div class="detalle-campo"><span>Motivo</span><p id="dMotivo"></p></div>
+                    <div class="detalle-campo"><span>Enviado por</span><p id="dConsultor"></p></div>
+                    <div class="detalle-campo"><span>Correo del consultor</span><p id="dCorreo"></p></div>
+                    <div class="detalle-campo"><span>Fecha del reporte</span><p id="dFecha"></p></div>
+                    <div class="detalle-campo"><span>Fecha de revisión</span><p id="dRevision"></p></div>
+                </div>
+
+                <div class="detalle-descripcion">
+                    <span>Descripción</span>
+                    <p id="dDescripcion"></p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/reportes/admin/detalle-reporte.js"></script>
+</body>
+</html>

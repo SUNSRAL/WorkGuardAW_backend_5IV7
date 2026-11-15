@@ -1,0 +1,91 @@
+/* Estilos de la página de detalle de un reporte (se usan junto con admindash.css) */
+
+.detalle-volver {
+    display: inline-block;
+    margin-bottom: 18px;
+    color: #6c5423;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.detalle-volver:hover {
+    color: #c29b38;
+}
+
+.detalle-card {
+    background: #fff;
+    border: 1px solid #eee5d3;
+    border-radius: 12px;
+    padding: 25px 30px;
+}
+
+.detalle-titulo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.detalle-titulo h1 {
+    font-size: 1.6rem;
+    color: #1a202c;
+}
+
+.detalle-estado {
+    background: #ebd7b2;
+    color: #594411;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 20px;
+}
+
+.detalle-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 30px;
+    margin-bottom: 22px;
+}
+
+.detalle-campo span,
+.detalle-descripcion span {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #718096;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.detalle-campo span {
+    margin-bottom: 3px;
+}
+
+.detalle-campo p {
+    font-size: 0.95rem;
+    color: #2d3748;
+}
+
+.detalle-descripcion span {
+    margin-bottom: 6px;
+}
+
+.detalle-descripcion p {
+    background: #f7f2ea;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 0.95rem;
+    color: #2d3748;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+    .detalle-grid {
+        grid-template-columns: 1fr;
+    }
+}
