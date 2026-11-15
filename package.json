@@ -1,5 +1,5 @@
 {
-  "name": "backend",
+  "name": "workguard-backend",
   "version": "1.0.0",
   "description": "API REST para el backend de WorkGuard",
   "main": "server.js",
@@ -8,16 +8,12 @@
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": [],
-  "author": "SUNSRAL",
-  "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.22.3",
-    "express-session": "^1.19.0",
-    "mysql2": "^3.24.6",
-    "pg": "^8.23.1"
+    "express-session": "^1.19.0"
   }
 }

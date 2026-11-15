@@ -1,38 +1,41 @@
 import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
-import { crearRutasAuth } from './rutas/auth_rutas.js';
+import authRoutes from './routes/auth_routes.js';
+import reporteRoutes from './routes/reporte_routes.js';
+import mipymeRoutes from './routes/mipyme_routes.js';
+import listaNegraRoutes from './routes/lista_negra_routes.js';
+import usuarioRoutes from './routes/usuario_routes.js';
 
-const NOMBRE_COOKIE = 'connect.sid';
+export const NOMBRE_COOKIE = 'connect.sid';
 
 export function crearApp(config = {}) {
     const app = express();
     const esProduccion = process.env.NODE_ENV === 'production';
 
     const sessionConfig = {
-        maxAge: config.maxAge || 1000 * 60 * 60 * 24,
-        rolling: config.rolling || false,
-        secret: process.env.SESSION_SECRET || config.secret || 'secreto-workguard-dev'
+        maxAge: config.maxAge || 1000 * 60 * 60 * 8,
+        rolling: config.rolling ?? true,
+        secret: process.env.SESSION_SECRET || config.secret
     };
+
+    app.locals.sessionConfig = sessionConfig;
 
     if (esProduccion) {
         app.set('trust proxy', 1);
     }
 
     app.use(cors({
-        origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+        origin: process.env.FRONTEND_URL,
         credentials: true
     }));
 
     app.use(express.json());
-
-    const almacen = new session.MemoryStore();
-    app.locals.almacen = almacen;
+    app.use(express.urlencoded({ extended: true }));
 
     app.use(session({
         name: NOMBRE_COOKIE,
         secret: sessionConfig.secret,
-        store: almacen,
         resave: false,
         saveUninitialized: false,
         rolling: sessionConfig.rolling,
@@ -44,7 +47,12 @@ export function crearApp(config = {}) {
         }
     }));
 
-    app.use('/api/auth', crearRutasAuth(sessionConfig));
+    // Rutas de la API
+    app.use('/api/auth', authRoutes);
+    app.use('/api/usuarios', usuarioRoutes);
+    app.use('/api/mipymes', mipymeRoutes);
+    app.use('/api/reportes', reporteRoutes);
+    app.use('/api/lista-negra', listaNegraRoutes);
 
     app.get('/', (req, res) => {
         res.json({ estado: 'API WorkGuard funcionando' });
@@ -52,3 +60,4 @@ export function crearApp(config = {}) {
 
     return app;
 }
+
