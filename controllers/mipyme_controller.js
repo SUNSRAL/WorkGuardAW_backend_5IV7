@@ -1,4 +1,6 @@
-import { obtenerMipymePorId } from '../modules/mipyme_module.js';
+
+import { listarMipymes, obtenerMipymePorId } from '../modules/mipyme_module.js';
+
 
 export async function obtenerMipyme(req, res) {
     const idMipyme = Number.parseInt(req.params.id, 10);
@@ -16,3 +18,14 @@ export async function obtenerMipyme(req, res) {
         return res.status(500).json({ error: 'Error interno del servidor.' });
     }
 }
+
+export async function obtenerTodasMipymes(req, res) {
+    try {
+        const empresas = await listarMipymes();
+        res.json(empresas);
+    } catch (error) {
+        console.error('Error al listar MiPyMEs:', error);
+        res.status(500).json({ error: 'Error al obtener la lista de empresas.' });
+    }
+}
+
