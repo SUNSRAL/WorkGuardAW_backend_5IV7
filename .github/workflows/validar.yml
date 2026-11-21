@@ -1,0 +1,52 @@
+name: Validar Backend Express
+
+on:
+  pull_request:
+    branches:
+      - main
+      - qa
+  push:
+    branches:
+      - main
+      - qa
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar sintaxis de todos los archivos JS
+        run: |
+          find . -name "*.js" -not -path "./node_modules/*" -exec node --check {} +
+
+      - name: Probar arranque del servidor (Smoke Test)
+        env:
+          PORT: 3001
+          NODE_ENV: test
+          SUPABASE_URL: https://supabase.co
+          SUPABASE_KEY: llave_de_prueba
+          SESSION_SECRET: secreto_de_prueba
+        run: |
+          node server.js &
+          SERVER_PID=$!
+          sleep 3
+          if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "Servidor arrancó correctamente sin errores"
+            kill $SERVER_PID
+          else
+            echo "El servidor se cayó al iniciar"
+            exit 1
+          fi
