@@ -13,7 +13,7 @@ import {
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 
-// Dataset local de RFCs EFOS (Art. 69-B SAT) + RFCs de prueba para demostración
+// Dataset local de RFCs EFOS + RFCs de prueba para demostración
 const LISTA_EFOS_SAT = new Set([
   "EFO010101AAA",
   "FAN990909XXX",
@@ -21,7 +21,7 @@ const LISTA_EFOS_SAT = new Set([
   "OPF120304ABC",
 ]);
 
-// Programas de edición manual que delatan un PDF alterado (Candado 2 antifalsificación)
+// Programas de edicion para verificar alguna alteracion
 const EDITORES_SOSPECHOSOS = [
   "photoshop",
   "canva",
@@ -32,7 +32,7 @@ const EDITORES_SOSPECHOSOS = [
   "illustrator",
 ];
 
-// Función auxiliar que analiza un PDF en RAM y aplica los candados antifalsificación
+// Analiza los documetnos y los verifica
 async function analizarDocumentoPdf(archivoObj, opciones = {}) {
   if (!archivoObj) {
     return {
@@ -56,7 +56,7 @@ async function analizarDocumentoPdf(archivoObj, opciones = {}) {
     const creador =
       `${parsed.info?.Creator || ""} ${parsed.info?.Producer || ""}`.toLowerCase();
 
-    // Candado 1: Si no tiene texto seleccionable (PDF escaneado como foto) -> Naranja
+    // Si no tien texto escaneable (no es un pdf normal)
     if (texto.trim().length < 40) {
       return {
         estado: "NARANJA",
@@ -65,7 +65,7 @@ async function analizarDocumentoPdf(archivoObj, opciones = {}) {
       };
     }
 
-    // Candado 2: Inspección de metadatos contra alteración manual
+    // Verfica alteracion manual
     const fueEditado = EDITORES_SOSPECHOSOS.some((tool) =>
       creador.includes(tool),
     );
@@ -73,11 +73,11 @@ async function analizarDocumentoPdf(archivoObj, opciones = {}) {
       return {
         estado: "NARANJA",
         mensaje:
-          "Los metadatos del PDF indican edición con software externo. Requiere verificación manual del administrador.",
+          "Parece que hubo alguna edición externa. Requiere verificación manual del administrador.",
       };
     }
 
-    // Candado 3: Si es documento del SAT, comprobar estructura oficial (Sello Digital / Cadena Original)
+    // Comprueba estructura oficial del SAT, Sello Digital/Cadena Original
     if (opciones.esSat) {
       const tieneEstructuraSat =
         texto.includes("SAT") ||
@@ -95,14 +95,14 @@ async function analizarDocumentoPdf(archivoObj, opciones = {}) {
       }
     }
 
-    // Candado 4: Coincidencia de datos clave dentro del documento
+    // Coincidencia con los datos ingresados
     if (
       opciones.rfcEsperado &&
       !texto.includes(opciones.rfcEsperado.toUpperCase())
     ) {
       return {
         estado: "NARANJA",
-        mensaje: `El RFC ingresado (${opciones.rfcEsperado}) no se detectó automáticamente dentro del PDF; pasará a revisión manual.`,
+        mensaje: `El RFC ingresado (${opciones.rfcEsperado}) no se encuentra dentro del PDF; pasará a revisión manual.`,
       };
     }
 
@@ -138,12 +138,12 @@ async function analizarDocumentoPdf(archivoObj, opciones = {}) {
     return {
       estado: "NARANJA",
       mensaje:
-        "No fue posible procesar automáticamente el PDF; queda pendiente de revisión manual.",
+        "No fue posible procesar el PDF; queda pendiente de revisión manual.",
     };
   }
 }
 
-// GET /api/mipymes/catalogos
+// Obtener los catalagos del registro
 export async function getCatalogosMipyme(req, res) {
   try {
     const catalogos = await obtenerCatalogosRegistro();
@@ -156,7 +156,8 @@ export async function getCatalogosMipyme(req, res) {
   }
 }
 
-// POST /api/mipymes/evaluar-paso (Validación en vivo paso a paso antes del registro final)
+/// REGISTRO DE LA MIPYME//
+
 export async function evaluarPasoMipyme(req, res) {
   try {
     const paso = Number(req.body.paso);
@@ -197,7 +198,7 @@ export async function evaluarPasoMipyme(req, res) {
         });
       }
 
-      // Validar sintaxis oficial de RFC (12 Moral, 13 Física)
+      // Validar RFC
       const regexMoral = /^[A-ZÑ&]{3}\d{6}[A-Z0-9]{3}$/;
       const regexFisica = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
       const rfcValido =
@@ -224,7 +225,7 @@ export async function evaluarPasoMipyme(req, res) {
       });
     }
 
-    // PASO 2: Actividad y Domicilio de Operaciones + Comprobante (+ Acta si es Moral)
+    // PASO 2: Actividad y Ubicacion
     if (paso === 2) {
       const {
         tipo_persona,
@@ -267,7 +268,7 @@ export async function evaluarPasoMipyme(req, res) {
       return res.json({ paso: 2, estado: estadoPaso, mensaje: mensajePaso });
     }
 
-    // PASO 3: Representación y CURP
+    // PASO 3: Represente y CURP
     if (paso === 3) {
       const { curp, tipo_persona, rfc } = req.body;
       const curpLimpia = (curp || "").trim().toUpperCase();
@@ -307,8 +308,9 @@ export async function evaluarPasoMipyme(req, res) {
             : resAcred.mensaje,
       });
     }
-    // PASO 4: Opinión 32-D y Estratificación DOF 2009
-    if (paso === 4) {
+
+    // PASO 4: Tamaño de la Empresa e Irregularidades fiscales con Opinión 32-D y Estratificación DOF 2009
+    if (paso === 4) { 
       const { numero_trabajadores, rfc } = req.body;
       const trabajadores = Number(numero_trabajadores);
       if (!trabajadores || trabajadores < 1) {
@@ -330,6 +332,7 @@ export async function evaluarPasoMipyme(req, res) {
         rfcEsperado: (rfc || "").trim().toUpperCase(),
         validar32D: true,
       });
+
       // Clasificación oficial por rango de trabajadores
       let tamanoSugerido = "Microempresa";
       if (trabajadores >= 11 && trabajadores <= 50)
@@ -349,7 +352,10 @@ export async function evaluarPasoMipyme(req, res) {
     return res.status(500).json({ error: "Error interno al validar el paso." });
   }
 }
-// POST /api/mipymes/registro (Guarda todo en Supabase tras completar todos los pasos)
+
+
+
+// Registrar MiPyme al COMPLETAR LOS PASOS 
 export async function registrarMipyme(req, res) {
   try {
     const datos =
@@ -391,7 +397,8 @@ export async function registrarMipyme(req, res) {
     if (dup.duplicado) {
       return res.status(409).json({ error: dup.mensaje });
     }
-    // Revisamos si algún paso quedó en Naranja para construir la advertencia transparente
+
+    // Si algún paso quedó en Naranja poner advertencia transparente
     const pasosObj = resultados_pasos || {};
     const tieneNaranjas = Object.values(pasosObj).some(
       (p) => p?.estado === "NARANJA",
@@ -440,7 +447,8 @@ export async function registrarMipyme(req, res) {
       .json({ error: "Error interno al guardar el registro de la MiPyME." });
   }
 }
-// GET /api/mipymes (Catálogo público para consultores: SOLO empresas aprobadas)
+
+// listar solo empresas aprobadas Consultor
 export async function getMipymesPublicas(req, res) {
   try {
     const empresas = await listarMipymesAprobadas();
@@ -452,7 +460,7 @@ export async function getMipymesPublicas(req, res) {
       .json({ error: "Error al obtener el directorio de MiPyMEs." });
   }
 }
-// GET /api/mipymes/admin/solicitudes (Listado completo para revisión del Administrador)
+// Listado completo para el Admin
 export async function getSolicitudesMipymeAdmin(req, res) {
   try {
     const empresas = await listarMipymesParaAdmin();
@@ -464,7 +472,8 @@ export async function getSolicitudesMipymeAdmin(req, res) {
       .json({ error: "Error al obtener las solicitudes de MiPyMEs." });
   }
 }
-// GET /api/mipymes/:id (Ficha detallada)
+
+// Obtener detalle de un Empresa
 export async function getDetalleMipyme(req, res) {
   try {
     const id = Number(req.params.id);
@@ -472,7 +481,8 @@ export async function getDetalleMipyme(req, res) {
     if (!empresa) {
       return res.status(404).json({ error: "MiPyME no encontrada." });
     }
-    // Si el que consulta es un consultor, bloqueamos ver empresas que aún no tienen sello aprobado
+
+    // Bloqueamos empresas no aprobadas a los consultores 
     if (
       req.usuario.rol === "consultor" &&
       !empresa.dictamen_verificacion?.sello_aprobado
@@ -491,7 +501,8 @@ export async function getDetalleMipyme(req, res) {
       .json({ error: "Error al obtener información de la MiPyME." });
   }
 }
-// PUT /api/mipymes/:id/dictamen (Administrador aprueba o rechaza con motivo)
+
+// Gestionar el registro de las Pymes 
 export async function dictaminarMipyme(req, res) {
   try {
     const id = Number(req.params.id);
@@ -532,3 +543,4 @@ export async function dictaminarMipyme(req, res) {
       .json({ error: "Error al actualizar el dictamen de la MiPyME." });
   }
 }
+
