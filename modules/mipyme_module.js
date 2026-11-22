@@ -89,117 +89,119 @@ export async function verificarDuplicadosRegistro(usuario, rfc) {
   return { duplicado: false };
 }
 
-// Crear el registro en supabase en todas las tablas
+// Crear Empresa en la base con Rollback si falla algún paso
 export async function crearRegistroMipymeCompleto(datos) {
-  // Domicilio_fiscal
-  const { data: domFiscal, error: errDomF } = await supabase
-    .from("domicilio_fiscal")
-    .insert([
-      {
-        codigo_postal: datos.domicilio_fiscal.codigo_postal,
-        calle: datos.domicilio_fiscal.calle,
-        numero: datos.domicilio_fiscal.numero,
-        id_alcaldia_fiscal: Number(datos.domicilio_fiscal.id_alcaldia_fiscal),
-        id_entidad_federativa_fiscal: Number(
-          datos.domicilio_fiscal.id_entidad_federativa_fiscal,
-        ),
-      },
-    ])
-    .select("id_domicilio_fiscal")
-    .single();
-  if (errDomF) throw errDomF;
+    let idDomFiscal = null;
+    let idExistencia = null;
+    let idDomOp = null;
+    let idActividad = null;
+    let idRepresentante = null;
 
-  // Existencia_fiscal
-  const { data: existencia, error: errEx } = await supabase
-    .from("existencia_fiscal")
-    .insert([
-      {
-        nombre_comercial: datos.nombre_comercial,
-        representante_legal: datos.representante.nombre_completo,
-        rfc: datos.rfc,
-        id_giro: Number(datos.id_giro),
-        id_domicilio_fiscal: domFiscal.id_domicilio_fiscal,
-      },
-    ])
-    .select("id_existencia_fiscal")
-    .single();
-  if (errEx) throw errEx;
+    try {
+        // Domicilio_fiscal
+        const { data: domFiscal, error: errDomF } = await supabase
+            .from('domicilio_fiscal')
+            .insert([{
+                codigo_postal: datos.domicilio_fiscal.codigo_postal,
+                calle: datos.domicilio_fiscal.calle,
+                numero: datos.domicilio_fiscal.numero,
+                id_alcaldia_fiscal: Number(datos.domicilio_fiscal.id_alcaldia_fiscal),
+                id_entidad_federativa_fiscal: Number(datos.domicilio_fiscal.id_entidad_federativa_fiscal)
+            }])
+            .select('id_domicilio_fiscal')
+            .single();
+        if (errDomF) throw errDomF;
+        idDomFiscal = domFiscal.id_domicilio_fiscal;
 
-  // Domicilio_operaciones
-  const { data: domOp, error: errDomOp } = await supabase
-    .from("domicilio_operaciones")
-    .insert([
-      {
-        codigo_postal: datos.domicilio_operaciones.codigo_postal,
-        calle: datos.domicilio_operaciones.calle,
-        numero: datos.domicilio_operaciones.numero,
-        id_alcaldia_operaciones: Number(
-          datos.domicilio_operaciones.id_alcaldia_operaciones,
-        ),
-        id_entidad_federativa_operaciones: Number(
-          datos.domicilio_operaciones.id_entidad_federativa_operaciones,
-        ),
-      },
-    ])
-    .select("id_domicilio_operaciones")
-    .single();
-  if (errDomOp) throw errDomOp;
+        // Existencia_fiscal
+        const { data: existencia, error: errEx } = await supabase
+            .from('existencia_fiscal')
+            .insert([{
+                nombre_comercial: datos.nombre_comercial,
+                representante_legal: datos.representante.nombre_completo,
+                rfc: datos.rfc,
+                id_giro: Number(datos.id_giro),
+                id_domicilio_fiscal: idDomFiscal
+            }])
+            .select('id_existencia_fiscal')
+            .single();
+        if (errEx) throw errEx;
+        idExistencia = existencia.id_existencia_fiscal;
 
-  // Actividad red/web
-  const { data: actividad, error: errAct } = await supabase
-    .from("actividad")
-    .insert([
-      {
-        facebook: datos.actividad.facebook || null,
-        instagram: datos.actividad.instagram || null,
-        twitter: datos.actividad.twitter || null,
-        pagina_web: datos.actividad.pagina_web || null,
-      },
-    ])
-    .select("id_actividad")
-    .single();
-  if (errAct) throw errAct;
+        // Domicilio_operaciones
+        const { data: domOp, error: errDomOp } = await supabase
+            .from('domicilio_operaciones')
+            .insert([{
+                codigo_postal: datos.domicilio_operaciones.codigo_postal,
+                calle: datos.domicilio_operaciones.calle,
+                numero: datos.domicilio_operaciones.numero,
+                id_alcaldia_operaciones: Number(datos.domicilio_operaciones.id_alcaldia_operaciones),
+                id_entidad_federativa_operaciones: Number(datos.domicilio_operaciones.id_entidad_federativa_operaciones)
+            }])
+            .select('id_domicilio_operaciones')
+            .single();
+        if (errDomOp) throw errDomOp;
+        idDomOp = domOp.id_domicilio_operaciones;
 
-  // Representante
-  const { data: representante, error: errRep } = await supabase
-    .from("representante")
-    .insert([
-      {
-        nombre_completo: datos.representante.nombre_completo,
-        curp: datos.representante.curp,
-        id_tarjeta: null,
-      },
-    ])
-    .select("id_representante")
-    .single();
-  if (errRep) throw errRep;
+        // Actividad (redes y web)
+        const { data: actividad, error: errAct } = await supabase
+            .from('actividad')
+            .insert([{
+                facebook: datos.actividad.facebook || null,
+                instagram: datos.actividad.instagram || null,
+                twitter: datos.actividad.twitter || null,
+                pagina_web: datos.actividad.pagina_web || null
+            }])
+            .select('id_actividad')
+            .single();
+        if (errAct) throw errAct;
+        idActividad = actividad.id_actividad;
 
-  // Mipyme con su dictamen_verificacion
-  const { data: nuevaMipyme, error: errMipyme } = await supabase
-    .from("mipyme")
-    .insert([
-      {
-        nombre_comercial: datos.nombre_comercial,
-        usuario: datos.usuario,
-        contrasena: datos.contrasena_hash,
-        tipo_persona: datos.tipo_persona,
-        numero_trabajadores: Number(datos.numero_trabajadores),
-        id_existencia_fiscal: existencia.id_existencia_fiscal,
-        id_actividad: actividad.id_actividad,
-        id_domicilio_operaciones: domOp.id_domicilio_operaciones,
-        id_representante: representante.id_representante,
-        id_tamano: Number(datos.id_tamano),
-        dictamen_verificacion: datos.dictamen_verificacion,
-      },
-    ])
-    .select(
-      "id_mipyme, nombre_comercial, usuario, tipo_persona, dictamen_verificacion",
-    )
-    .single();
-  if (errMipyme) throw errMipyme;
+        // Representante
+        const { data: representante, error: errRep } = await supabase
+            .from('representante')
+            .insert([{
+                nombre_completo: datos.representante.nombre_completo,
+                curp: datos.representante.curp,
+                id_tarjeta: null
+            }])
+            .select('id_representante')
+            .single();
+        if (errRep) throw errRep;
+        idRepresentante = representante.id_representante;
 
-  return nuevaMipyme;
+        // Mipyme principal con su dictamen_verificacion
+        const { data: nuevaMipyme, error: errMipyme } = await supabase
+            .from('mipyme')
+            .insert([{
+                nombre_comercial: datos.nombre_comercial,
+                usuario: datos.usuario,
+                contrasena: datos.contrasena_hash,
+                tipo_persona: datos.tipo_persona,
+                numero_trabajadores: Number(datos.numero_trabajadores),
+                id_existencia_fiscal: idExistencia,
+                id_actividad: idActividad,
+                id_domicilio_operaciones: idDomOp,
+                id_representante: idRepresentante,
+                id_tamano: Number(datos.id_tamano),
+                dictamen_verificacion: datos.dictamen_verificacion
+            }])
+            .select('id_mipyme, nombre_comercial, usuario, tipo_persona, dictamen_verificacion')
+            .single();
+        if (errMipyme) throw errMipyme;
+
+        return nuevaMipyme;
+    } catch (error) {
+        // Rollback para no dejar registros si falla algo
+        if (idRepresentante) await supabase.from('representante').delete().eq('id_representante', idRepresentante);
+        if (idActividad) await supabase.from('actividad').delete().eq('id_actividad', idActividad);
+        if (idDomOp) await supabase.from('domicilio_operaciones').delete().eq('id_domicilio_operaciones', idDomOp);
+        if (idExistencia) await supabase.from('existencia_fiscal').delete().eq('id_existencia_fiscal', idExistencia);
+        if (idDomFiscal) await supabase.from('domicilio_fiscal').delete().eq('id_domicilio_fiscal', idDomFiscal);
+        throw error;
+    }
 }
+
 
 // Listar las MiPymes ya verificadas al CONSULTOR
 export async function listarMipymesAprobadas() {
