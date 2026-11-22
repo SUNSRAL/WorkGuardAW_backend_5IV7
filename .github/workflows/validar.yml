@@ -38,7 +38,7 @@ jobs:
           NODE_ENV: test
           SUPABASE_URL: https://supabase.co
           SUPABASE_KEY: llave_de_prueba
-          SESSION_SECRET: secreto_de_prueba
+          JWT_SECRET: secreto_de_prueba
         run: |
           node server.js &
           SERVER_PID=$!
