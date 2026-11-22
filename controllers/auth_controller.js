@@ -1,6 +1,20 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { buscarUsuarioPorCredenciales } from '../modules/auth_module.js';
-import { NOMBRE_COOKIE } from '../app.js';
+import { NOMBRE_COOKIE, revocarToken } from '../middlewares/auth_middleware.js';
+
+const EXPIRA_SEGUNDOS = 60 * 60 * 2; // 2 horas
+
+function opcionesCookie() {
+    const esProduccion = process.env.NODE_ENV === 'production';
+    return {
+        httpOnly: true,
+        sameSite: esProduccion ? 'none' : 'lax',
+        secure: esProduccion,
+        maxAge: EXPIRA_SEGUNDOS * 1000
+    };
+}
 
 export async function login(req, res) {
     try {
@@ -15,7 +29,6 @@ export async function login(req, res) {
             return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
         }
 
-        // Contraseñas encriptadas con bcrypt y contraseñas de prueba en texto plano
         const esHash = cuenta.contrasena.startsWith('$2');
         const contrasenaValida = esHash
             ? await bcrypt.compare(contrasena, cuenta.contrasena)
@@ -25,19 +38,31 @@ export async function login(req, res) {
             return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
         }
 
-        const ahora = Date.now();
-        req.session.usuario = {
-            id: cuenta.id,
-            usuario: cuenta.usuario,
-            nombre: cuenta.nombre,
-            rol: cuenta.rol
-        };
-        req.session.creada = ahora;
-        req.session.ultimoUso = ahora;
+        const token = jwt.sign(
+            {
+                sub: String(cuenta.id),
+                usuario: cuenta.usuario,
+                nombre: cuenta.nombre,
+                rol: cuenta.rol
+            },
+            process.env.JWT_SECRET,
+            {
+                algorithm: 'HS256',
+                expiresIn: EXPIRA_SEGUNDOS,
+                jwtid: crypto.randomUUID()
+            }
+        );
+
+        res.cookie(NOMBRE_COOKIE, token, opcionesCookie());
 
         return res.json({
             mensaje: 'Inicio de sesión exitoso',
-            usuario: req.session.usuario
+            usuario: {
+                id: cuenta.id,
+                usuario: cuenta.usuario,
+                nombre: cuenta.nombre,
+                rol: cuenta.rol
+            }
         });
     } catch (error) {
         console.error('Error en login:', error);
@@ -48,16 +73,14 @@ export async function login(req, res) {
 export function verificarSesion(req, res) {
     return res.json({
         autenticado: true,
-        usuario: req.session.usuario
+        usuario: req.usuario
     });
 }
 
 export function logout(req, res) {
-    req.session.destroy((err) => {
-        if (err) {
-            return res.status(500).json({ error: 'No se pudo cerrar la sesión.' });
-        }
-        res.clearCookie(NOMBRE_COOKIE);
-        return res.json({ mensaje: 'Sesión cerrada correctamente.' });
-    });
+    if (req.usuario?.jti) {
+        revocarToken(req.usuario.jti);
+    }
+    res.clearCookie(NOMBRE_COOKIE, opcionesCookie());
+    return res.json({ mensaje: 'Sesión cerrada correctamente.' });
 }
