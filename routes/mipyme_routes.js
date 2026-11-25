@@ -20,4 +20,12 @@ router.post('/registro', subirDocumentosMipyme, registrarMipyme);
 router.get('/', requiereSesion, getMipymesPublicas);
 router.get('/:id', requiereSesion, requiereRol('administrador', 'consultor', 'mipyme'), getDetalleMipyme);
 
+// Rutas de revision protegidas para el Admin
+router.get('/admin/solicitudes', requiereSesion, requiereRol('administrador'), getSolicitudesMipymeAdmin);
+router.put('/:id/dictamen', requiereSesion, requiereRol('administrador'), dictaminarMipyme);
+
+// Rutas de consulta que requieren sesion 
+router.get('/', requiereSesion, getMipymesPublicas);
+router.get('/:id', requiereSesion, requiereRol('administrador', 'consultor', 'mipyme'), getDetalleMipyme);
+
 export default router;

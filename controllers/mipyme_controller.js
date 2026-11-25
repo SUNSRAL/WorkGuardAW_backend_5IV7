@@ -20,6 +20,13 @@ import {
 const require = createRequire(import.meta.url);
 import { PDFParse } from 'pdf-parse';
 
+// Dataset local de RFCs EFOS + RFCs de prueba para demostración
+const LISTA_EFOS_SAT = new Set([
+  "EFO010101AAA",
+  "FAN990909XXX",
+  "SIM850505123",
+  "OPF120304ABC",
+]);
 
 // Programas de edicion
 const EDITORES_SOSPECHOSOS = [
