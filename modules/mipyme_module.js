@@ -47,9 +47,7 @@ export async function obtenerCatalogosRegistro() {
   };
 }
 
-/**
- * Busca el id_catalogo_tamano correspondiente según la clasificación DOF
- */
+//Obitene el id para el tamaño de la empresa
 export async function obtenerIdTamanoPorEtiqueta(etiquetaDof) {
   const { data, error } = await supabase
     .from("catalogo_tamano")
@@ -440,34 +438,26 @@ export async function crearRegistroMipymeCompleto(datos) {
 export async function listarMipymesAprobadas() {
   const [mipymesRes, sancionadasRes] = await Promise.all([
     supabase
-      .from("mipyme")
+      .from('mipyme')
       .select(
-        id_mipyme,
-        nombre_comercial,
-        tipo_persona,
-        numero_trabajadores,
-        validado_denue,
-        existencia_fiscal(rfc, catalogo_giro(opcion_giro)),
-        domicilio_operaciones(
-          calle,
-          numero,
-          codigo_postal,
-          catalogo_alcaldia_operaciones(opcion_alcaldia),
-        ),
-        catalogo_tamano(opcion_tamano_empresa),
-        actividad(pagina_web, facebook, instagram, twitter),
+        'id_mipyme, nombre_comercial, tipo_persona, numero_trabajadores, validado_denue, ' +
+        'existencia_fiscal ( rfc, catalogo_giro ( opcion_giro ) ), ' +
+        'domicilio_operaciones ( calle, numero, codigo_postal, catalogo_alcaldia_operaciones ( opcion_alcaldia ) ), ' +
+        'catalogo_tamano ( opcion_tamano_empresa ), ' +
+        'actividad ( pagina_web, facebook, instagram, twitter )'
       )
-      .order("id_mipyme", { ascending: false }),
-    supabase.from("listado_negro").select("id_mipyme").eq("estado", "ACTIVA"),
+      .order('id_mipyme', { ascending: false }),
+    supabase
+      .from('listado_negro')
+      .select('id_mipyme')
+      .eq('estado', 'ACTIVA')
   ]);
+
   if (mipymesRes.error) throw mipymesRes.error;
   if (sancionadasRes.error) throw sancionadasRes.error;
-  const idsSancionadas = new Set(
-    (sancionadasRes.data || []).map((s) => s.id_mipyme),
-  );
-  return (mipymesRes.data || []).filter(
-    (m) => !idsSancionadas.has(m.id_mipyme),
-  );
+
+  const idsSancionadas = new Set((sancionadasRes.data || []).map((s) => s.id_mipyme));
+  return (mipymesRes.data || []).filter((m) => !idsSancionadas.has(m.id_mipyme));
 }
 
 
@@ -476,35 +466,16 @@ export async function obtenerMipymePorId(idMipyme) {
   const { data, error } = await supabase
     .from("mipyme")
     .select(
-      id_mipyme,
-      nombre_comercial,
-      usuario,
-      tipo_persona,
-      numero_trabajadores,
-      validado_denue,
-      existencia_fiscal(
-        rfc,
-        representante_legal,
-        catalogo_giro(opcion_giro),
-        domicilio_fiscal(
-          calle,
-          numero,
-          codigo_postal,
-          catalogo_alcaldia_fiscal(opcion_alcaldia),
-        ),
-      ),
-      domicilio_operaciones(
-        calle,
-        numero,
-        codigo_postal,
-        catalogo_alcaldia_operaciones(opcion_alcaldia),
-      ),
-      catalogo_tamano(opcion_tamano_empresa),
-      representante(nombre_completo, curp),
-      actividad(pagina_web, facebook, instagram, twitter),
+      "id_mipyme, nombre_comercial, usuario, tipo_persona, numero_trabajadores, validado_denue, " +
+      "existencia_fiscal(rfc, representante_legal, catalogo_giro(opcion_giro), domicilio_fiscal(calle, numero, codigo_postal, catalogo_alcaldia_fiscal(opcion_alcaldia))), " +
+      "domicilio_operaciones(calle, numero, codigo_postal, catalogo_alcaldia_operaciones(opcion_alcaldia)), " +
+      "catalogo_tamano(opcion_tamano_empresa), " +
+      "representante(nombre_completo, curp), " +
+      "actividad(pagina_web, facebook, instagram, twitter)"
     )
     .eq("id_mipyme", idMipyme)
     .maybeSingle();
+
   if (error) throw error;
   return data;
 }

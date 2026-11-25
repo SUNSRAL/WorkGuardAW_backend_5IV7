@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { createRequire } from 'module';
-import { pdf } from 'pdf-to-img';
-import { Jimp } from 'jimp';
+import { PNG } from 'pngjs';
 import jsQR from 'jsqr';
 import {
   obtenerCatalogosRegistro,
@@ -19,7 +18,8 @@ import {
 } from '../modules/mipyme_module.js';
 
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+import { PDFParse } from 'pdf-parse';
+
 
 // Programas de edicion
 const EDITORES_SOSPECHOSOS = [
@@ -48,44 +48,65 @@ function normalizarTexto(texto = '') {
 /**
  * Extrae texto y metadatos de un archivo PDF en memoria RAM
  */
-async function leerPdfMemoria(archivoObj) {
-  const parsed = await pdfParse(archivoObj.buffer);
-  const textoCrudo = parsed.text || '';
-  const textoNormalizado = normalizarTexto(textoCrudo);
-  const creador = `${parsed.info?.Creator || ''} ${parsed.info?.Producer || ''}`.toLowerCase();
-  const fueEditado = EDITORES_SOSPECHOSOS.some((tool) => creador.includes(tool));
+async function leerPdfMemoria(fileObj) {
+  if (!fileObj || !fileObj.buffer) {
+    return { textoNormalizado: '', fueEditado: false };
+  }
+  const parser = new PDFParse({ data: fileObj.buffer });
+  try {
+    const [resultado, info] = await Promise.all([
+      parser.getText(),
+      parser.getInfo().catch(() => ({}))
+    ]);
+    const textoCrudo = resultado?.text || '';
+    const metadatos = JSON.stringify(info || {}).toLowerCase();
+    const fueEditado = EDITORES_SOSPECHOSOS.some((ed) => metadatos.includes(ed));
 
-  return { textoCrudo, textoNormalizado, fueEditado };
+    return {
+      textoNormalizado: normalizarTexto(textoCrudo),
+      fueEditado
+    };
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
 }
+
+
 
 /**
  * Decodifica el Código QR de las primeras páginas de un PDF en memoria RAM
  */
-async function leerQrDePdf(archivoObj) {
-  if (!archivoObj || !archivoObj.buffer) return null;
-
+/**
+ * Decodifica el Código QR de las primeras páginas de un PDF en memoria RAM
+ */
+async function leerQrDePdf(pdfBuffer) {
+  if (!pdfBuffer) return null;
+  const parser = new PDFParse({ data: pdfBuffer });
   try {
-    const documento = await pdf(archivoObj.buffer, { scale: 2.2 });
-    let pagina = 0;
-
-    for await (const imageBuffer of documento) {
-      pagina += 1;
-      if (pagina > 2) break;
-
-      const image = await Jimp.read(imageBuffer);
-      const { data, width, height } = image.bitmap;
-      const qr = jsQR(new Uint8ClampedArray(data), width, height);
-
-      if (qr && qr.data) {
-        return qr.data.trim();
+    const capturas = await parser.getScreenshot({ scale: 3.5, first: 2 });
+    for (const pagina of capturas?.pages || []) {
+      if (!pagina?.data) continue;
+      const png = PNG.sync.read(Buffer.from(pagina.data));
+      const codigo = jsQR(
+        new Uint8ClampedArray(png.data),
+        png.width,
+        png.height,
+        { inversionAttempts: 'attemptBoth' }
+      );
+      if (codigo && codigo.data) {
+        console.log('QR SAT detectado:', codigo.data);
+        return codigo.data.trim();
       }
     }
     return null;
-  } catch (error) {
-    console.error('Error al leer código QR del PDF:', error.message);
+  } catch (err) {
+    console.error('Error leyendo QR del PDF:', err.message);
     return null;
+  } finally {
+    await parser.destroy().catch(() => {});
   }
 }
+
 
 /**
  * Calcula el tamaño oficial DOF (México) según el número de trabajadores (1 a 250)
@@ -221,9 +242,8 @@ export async function evaluarPasoMipyme(req, res) {
       }
     }
 
-    // -------------------------------------------------------------------------
     // PASO 1: EXISTENCIA FISCAL (SAT + EFOS + QR CSF)
-    // -------------------------------------------------------------------------
+    
     if (paso === 1) {
       const {
         tipo_persona,
@@ -238,7 +258,7 @@ export async function evaluarPasoMipyme(req, res) {
         return res.status(400).json({ error: 'Completa todos los campos obligatorios del Paso 1.' });
       }
 
-      // 1. Validar formato oficial de RFC (12 Moral / 13 Física)
+      // Validar formato oficial de RFC (12 Moral / 13 Física)
       const regexMoral = /^[A-ZÑ&]{3}\d{6}[A-Z0-9]{3}$/;
       const regexFisica = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
       const rfcValido = tipo_persona === 'MORAL' ? regexMoral.test(rfcLimpio) : regexFisica.test(rfcLimpio);
@@ -253,7 +273,7 @@ export async function evaluarPasoMipyme(req, res) {
         });
       }
 
-      // 2. Verificar duplicidad de RFC y Nombre Comercial en WorkGuard
+      // Verificar duplicidad de RFC y Nombre Comercial en WorkGuard
       const duplicados = await verificarDuplicadosPaso1(rfcLimpio, nombreComercial);
       if (duplicados.existeRfc) {
         return responderFalloPaso(res, {
@@ -274,7 +294,7 @@ export async function evaluarPasoMipyme(req, res) {
         });
       }
 
-      // 3. Revisar Listas Negras (SAT EFOS 69-B y Listado Negro interno) -> ROJO INMEDIATO
+      // Revisar Listas Negras 
       const chequeoNegra = await verificarListasNegras({
         rfc: rfcLimpio,
         nombreComercial
@@ -289,7 +309,7 @@ export async function evaluarPasoMipyme(req, res) {
         });
       }
 
-      // 4. Analizar PDF de Constancia de Situación Fiscal + Código QR oficial del SAT
+      // Analizar PDF de Constancia de Situación Fiscal + Código QR oficial del SAT
       const docCsf = files.doc_csf?.[0];
       if (!docCsf) {
         return res.status(400).json({ error: 'Debes adjuntar tu Constancia de Situación Fiscal en PDF.' });
@@ -327,8 +347,59 @@ export async function evaluarPasoMipyme(req, res) {
         });
       }
 
+      // Validar Código Postal fiscal en la Constancia SAT
+      const cpFiscalLimpio = String(cp_fiscal).trim();
+      if (!/^\d{5}$/.test(cpFiscalLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'El Código Postal fiscal debe tener exactamente 5 dígitos.'
+        });
+      }
+
+      // Validar si es de CDMX (01000 al 16999)
+      /**const prefijoCpFiscal = Number(cpFiscalLimpio.slice(0, 2));
+      if (prefijoCpFiscal < 1 || prefijoCpFiscal > 16) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `El Código Postal ${cpFiscalLimpio} no pertenece a la Ciudad de México. Actualmente WorkGuard opera con cobertura en CDMX.`
+        });
+      }*/
+
+      if (!textoNormalizado.includes(cpFiscalLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `El Código Postal fiscal (${cpFiscalLimpio}) no coincide con el registrado en tu Constancia de Situación Fiscal.`
+        });
+      }
+
+      if (textoNormalizado.includes('VIALIDAD')) {
+        const palabrasCalleFiscal = normalizarTexto(calle_fiscal)
+          .split(' ')
+          .filter((w) => w.length >= 4);
+
+        if (palabrasCalleFiscal.length > 0 && !palabrasCalleFiscal.some((w) => textoNormalizado.includes(w))) {
+          return responderFalloPaso(res, {
+            rfc: rfcLimpio,
+            nombreComercial,
+            paso: 1,
+            esRojo: false,
+            mensaje: 'La calle del domicilio fiscal no coincide con la asentada en tu Constancia de Situación Fiscal.'
+          });
+        }
+      }
+
       // Validar Código QR oficial del SAT (siat.sat.gob.mx + RFC)
-      const contenidoQr = await leerQrDePdf(docCsf);
+      const contenidoQr = await leerQrDePdf(docCsf.buffer);
+
       if (!contenidoQr || !contenidoQr.toLowerCase().includes('sat.gob.mx') || !contenidoQr.toUpperCase().includes(rfcLimpio)) {
         return responderFalloPaso(res, {
           rfc: rfcLimpio,
@@ -446,7 +517,8 @@ export async function evaluarPasoMipyme(req, res) {
         return res.status(400).json({ error: 'Ingresa el nombre completo y la CURP del representante o titular.' });
       }
 
-      const regexCurp = /^[A-Z][AEIOUX][A-Z]{2}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])HM[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d$/;
+      const regexCurp = /^[A-Z][AEIOUX][A-Z]{2}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[HMX][A-Z]{2}[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d$/;
+
       if (!regexCurp.test(curpLimpia)) {
         return responderFalloPaso(res, {
           rfc: rfcLimpio,
@@ -641,7 +713,8 @@ export async function evaluarPasoMipyme(req, res) {
       }
 
       // Validar Código QR oficial del SAT en la Opinión 32-D
-      const qr32d = await leerQrDePdf(doc32d);
+      const qr32d = await leerQrDePdf(doc32d.buffer);
+
       if (!qr32d || !qr32d.toLowerCase().includes('sat.gob.mx') || !qr32d.toUpperCase().includes(rfcLimpio)) {
         return responderFalloPaso(res, {
           rfc: rfcLimpio,
