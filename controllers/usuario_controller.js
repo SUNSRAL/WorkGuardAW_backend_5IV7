@@ -2,19 +2,45 @@ import bcrypt from 'bcryptjs';
 import { obtenerConsultorPorId, crearConsultor, actualizarConsultor } from '../modules/usuario_module.js';
 
 export async function obtenerConsultor(req, res) {
+
     const idConsultor = Number.parseInt(req.params.id, 10);
+
+    // Comprobar que el identificador sea válido
     if (!Number.isInteger(idConsultor)) {
-        return res.status(400).json({ error: 'Identificador de consultor no válido.' });
+        return res.status(400).json({
+            error: 'Identificador de consultor no válido.'
+        });
     }
+
+    // El consultor solo puede consultar su propia cuenta
+    if (
+        req.usuario.rol === 'consultor' &&
+        req.usuario.id !== idConsultor
+    ) {
+        return res.status(403).json({
+            error: 'No puedes consultar la cuenta de otro consultor.'
+        });
+    }
+
     try {
+
         const consultor = await obtenerConsultorPorId(idConsultor);
+
         if (!consultor) {
-            return res.status(404).json({ error: 'Consultor no encontrado.' });
+            return res.status(404).json({
+                error: 'Consultor no encontrado.'
+            });
         }
+
         return res.json(consultor);
+
     } catch (error) {
+
         console.error('Error al obtener consultor:', error);
-        return res.status(500).json({ error: 'Error interno del servidor.' });
+
+        return res.status(500).json({
+            error: 'Error interno del servidor.'
+        });
     }
 }
 
