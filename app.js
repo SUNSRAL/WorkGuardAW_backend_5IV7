@@ -15,8 +15,13 @@ export function crearApp() {
         app.set('trust proxy', 1);
     }
 
+    const origenesPermitidos = [
+        'http://localhost:3000',
+        process.env.FRONTEND_URL
+    ].filter(Boolean);
+
     app.use(cors({
-        origin: process.env.FRONTEND_URL,
+        origin: origenesPermitidos,
         credentials: true
     }));
 
@@ -24,7 +29,6 @@ export function crearApp() {
     app.use(express.urlencoded({ extended: true }));
     app.use(cookieParser());
 
-    // Rutas de la API
     app.use('/api/auth', authRoutes);
     app.use('/api/usuarios', usuarioRoutes);
     app.use('/api/mipymes', mipymeRoutes);
