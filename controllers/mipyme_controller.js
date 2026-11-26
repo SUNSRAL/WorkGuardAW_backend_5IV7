@@ -1,17 +1,24 @@
-import bcrypt from "bcryptjs";
-import { createRequire } from "module";
+import bcrypt from 'bcryptjs';
+import { createRequire } from 'module';
+import { PNG } from 'pngjs';
+import jsQR from 'jsqr';
 import {
   obtenerCatalogosRegistro,
-  verificarDuplicadosRegistro,
+  obtenerIdTamanoPorEtiqueta,
+  verificarDuplicadosPaso1,
+  verificarCurpDuplicada,
+  verificarUsuarioDuplicado,
+  verificarListasNegras,
+  obtenerIntentosRegistro,
+  registrarFalloIntento,
+  limpiarIntentosRegistro,
   crearRegistroMipymeCompleto,
   listarMipymesAprobadas,
-  listarMipymesParaAdmin,
-  obtenerMipymePorId,
-  actualizarDictamenAdmin,
-} from "../modules/mipyme_module.js";
+  obtenerMipymePorId
+} from '../modules/mipyme_module.js';
 
 const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse");
+import { PDFParse } from 'pdf-parse';
 
 // Dataset local de RFCs EFOS + RFCs de prueba para demostración
 const LISTA_EFOS_SAT = new Set([
@@ -21,347 +28,733 @@ const LISTA_EFOS_SAT = new Set([
   "OPF120304ABC",
 ]);
 
-// Programas de edicion para verificar alguna alteracion
+// Programas de edicion
 const EDITORES_SOSPECHOSOS = [
-  "photoshop",
-  "canva",
-  "ilovepdf",
-  "pdfescape",
-  "word",
-  "coreldraw",
-  "illustrator",
+  'photoshop',
+  'canva',
+  'ilovepdf',
+  'pdfescape',
+  'word',
+  'coreldraw',
+  'illustrator'
 ];
 
-// Analiza los documetnos y los verifica
-async function analizarDocumentoPdf(archivoObj, opciones = {}) {
-  if (!archivoObj) {
-    return {
-      estado: "NARANJA",
-      mensaje:
-        "No se adjuntó archivo; requiere revisión manual del administrador.",
-    };
-  }
+/**
+ * Normaliza cadenas para comparaciones insensibles a acentos, mayúsculas o signos
+ */
+function normalizarTexto(texto = '') {
+  return String(texto)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-  if (archivoObj.mimetype !== "application/pdf") {
-    return {
-      estado: "NARANJA",
-      mensaje:
-        "Se subió una imagen en lugar de PDF digital oficial; requiere revisión manual.",
-    };
+/**
+ * Extrae texto y metadatos de un archivo PDF en memoria RAM
+ */
+async function leerPdfMemoria(fileObj) {
+  if (!fileObj || !fileObj.buffer) {
+    return { textoNormalizado: '', fueEditado: false };
   }
-
+  const parser = new PDFParse({ data: fileObj.buffer });
   try {
-    const parsed = await pdfParse(archivoObj.buffer);
-    const texto = (parsed.text || "").toUpperCase();
-    const creador =
-      `${parsed.info?.Creator || ""} ${parsed.info?.Producer || ""}`.toLowerCase();
-
-    // Si no tien texto escaneable (no es un pdf normal)
-    if (texto.trim().length < 40) {
-      return {
-        estado: "NARANJA",
-        mensaje:
-          "El PDF parece escaneado (sin texto digital seleccionable). Se recomienda subir el PDF original descargado del portal oficial; queda sujeto a revisión manual.",
-      };
-    }
-
-    // Verfica alteracion manual
-    const fueEditado = EDITORES_SOSPECHOSOS.some((tool) =>
-      creador.includes(tool),
-    );
-    if (fueEditado) {
-      return {
-        estado: "NARANJA",
-        mensaje:
-          "Parece que hubo alguna edición externa. Requiere verificación manual del administrador.",
-      };
-    }
-
-    // Comprueba estructura oficial del SAT, Sello Digital/Cadena Original
-    if (opciones.esSat) {
-      const tieneEstructuraSat =
-        texto.includes("SAT") ||
-        texto.includes("SERVICIO DE ADMINISTRACION TRIBUTARIA") ||
-        texto.includes("SERVICIO DE ADMINISTRACIÓN TRIBUTARIA") ||
-        texto.includes("SELLO DIGITAL") ||
-        texto.includes("CADENA ORIGINAL");
-
-      if (!tieneEstructuraSat) {
-        return {
-          estado: "NARANJA",
-          mensaje:
-            "El PDF no contiene los encabezados o cadenas digitales oficiales del SAT. Sube el PDF original descargado del SAT o espera revisión.",
-        };
-      }
-    }
-
-    // Coincidencia con los datos ingresados
-    if (
-      opciones.rfcEsperado &&
-      !texto.includes(opciones.rfcEsperado.toUpperCase())
-    ) {
-      return {
-        estado: "NARANJA",
-        mensaje: `El RFC ingresado (${opciones.rfcEsperado}) no se encuentra dentro del PDF; pasará a revisión manual.`,
-      };
-    }
-
-    if (opciones.cpEsperado && !texto.includes(opciones.cpEsperado)) {
-      return {
-        estado: "NARANJA",
-        mensaje: `El Código Postal (${opciones.cpEsperado}) no coincidió automáticamente con el comprobante; pasará a revisión manual.`,
-      };
-    }
-
-    if (opciones.validar32D) {
-      if (texto.includes("NEGATIVO")) {
-        return {
-          estado: "NARANJA",
-          mensaje:
-            "La Opinión 32-D reporta sentido NEGATIVO ante el SAT; requiere evaluación del administrador.",
-        };
-      }
-      if (!texto.includes("POSITIVO")) {
-        return {
-          estado: "NARANJA",
-          mensaje:
-            "No se pudo confirmar el sentido POSITIVO en la Opinión 32-D; pasará a revisión manual.",
-        };
-      }
-    }
+    const [resultado, info] = await Promise.all([
+      parser.getText(),
+      parser.getInfo().catch(() => ({}))
+    ]);
+    const textoCrudo = resultado?.text || '';
+    const metadatos = JSON.stringify(info || {}).toLowerCase();
+    const fueEditado = EDITORES_SOSPECHOSOS.some((ed) => metadatos.includes(ed));
 
     return {
-      estado: "VERDE",
-      mensaje: "Documento digital auténtico y datos validados correctamente.",
+      textoNormalizado: normalizarTexto(textoCrudo),
+      fueEditado
     };
-  } catch (err) {
-    return {
-      estado: "NARANJA",
-      mensaje:
-        "No fue posible procesar el PDF; queda pendiente de revisión manual.",
-    };
+  } finally {
+    await parser.destroy().catch(() => {});
   }
 }
 
-// Obtener los catalagos del registro
+
+
+/**
+ * Decodifica el Código QR de las primeras páginas de un PDF en memoria RAM
+ */
+/**
+ * Decodifica el Código QR de las primeras páginas de un PDF en memoria RAM
+ */
+async function leerQrDePdf(pdfBuffer) {
+  if (!pdfBuffer) return null;
+  const parser = new PDFParse({ data: pdfBuffer });
+  try {
+    const capturas = await parser.getScreenshot({ scale: 3.5, first: 2 });
+    for (const pagina of capturas?.pages || []) {
+      if (!pagina?.data) continue;
+      const png = PNG.sync.read(Buffer.from(pagina.data));
+      const codigo = jsQR(
+        new Uint8ClampedArray(png.data),
+        png.width,
+        png.height,
+        { inversionAttempts: 'attemptBoth' }
+      );
+      if (codigo && codigo.data) {
+        console.log('QR SAT detectado:', codigo.data);
+        return codigo.data.trim();
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('Error leyendo QR del PDF:', err.message);
+    return null;
+  } finally {
+    await parser.destroy().catch(() => {});
+  }
+}
+
+
+/**
+ * Calcula el tamaño oficial DOF (México) según el número de trabajadores (1 a 250)
+ */
+function calcularTamanoDOF(numTrabajadores) {
+  const n = Number(numTrabajadores);
+  if (n >= 1 && n <= 10) return 'Micro';
+  if (n >= 11 && n <= 50) return 'Pequeña';
+  if (n >= 51 && n <= 250) return 'Mediana';
+  return null;
+}
+
+/**
+ * Consulta cruzada opcional con el Directorio Estadístico Nacional (DENUE - INEGI)
+ */
+async function consultarDenueInegi({ nombreComercial, cp }) {
+  const token = process.env.INEGI_DENUE_TOKEN;
+  if (!token || !nombreComercial || !cp) {
+    return { consultado: false, coincide: false };
+  }
+
+  try {
+    const termino = encodeURIComponent(nombreComercial.trim());
+    const url = `https://www.inegi.org.mx/app/api/denue/v1/consulta/Nombre/${termino}/00/1/15/${token}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return { consultado: false, coincide: false };
+
+    const lista = await resp.json();
+    if (!Array.isArray(lista) || lista.length === 0) {
+      return { consultado: true, coincide: false };
+    }
+
+    const cpLimpio = String(cp).trim();
+    const match = lista.find((item) => String(item.CP || '').trim() === cpLimpio);
+
+    if (match) {
+      return {
+        consultado: true,
+        coincide: true,
+        establecimiento: match.Nombre,
+        actividad: match.Clase_actividad
+      };
+    }
+
+    return { consultado: true, coincide: false };
+  } catch (error) {
+    console.error('Aviso DENUE INEGI:', error.message);
+    return { consultado: false, coincide: false };
+  }
+}
+
+/**
+ * Registra fallo Naranja (máx. 3 por paso) o bloqueo Rojo y devuelve respuesta HTTP estándar
+ */
+async function responderFalloPaso(res, { rfc, curp, nombreComercial, paso, esRojo, mensaje }) {
+  if (!rfc) {
+    return res.status(esRojo ? 403 : 400).json({
+      estado: esRojo ? 'ROJO' : 'NARANJA',
+      bloqueado: esRojo,
+      error: mensaje,
+      mensaje
+    });
+  }
+
+  const estadoIntento = await registrarFalloIntento({
+    rfc,
+    curp,
+    nombreComercial,
+    paso,
+    esRojo,
+    motivo: mensaje
+  });
+
+  if (estadoIntento.bloqueado) {
+    return res.status(403).json({
+      paso,
+      estado: 'ROJO',
+      bloqueado: true,
+      intentos_restantes: 0,
+      error: estadoIntento.motivoBloqueo || mensaje,
+      mensaje: estadoIntento.motivoBloqueo || mensaje
+    });
+  }
+
+  return res.status(422).json({
+    paso,
+    estado: 'NARANJA',
+    bloqueado: false,
+    intentos_usados: estadoIntento.intentosUsados,
+    intentos_restantes: estadoIntento.intentosRestantes,
+    error: mensaje,
+    mensaje
+  });
+}
+
+// =============================================================================
+// ENDPOINTS DE CATÁLOGOS Y EVALUACIÓN POR PASOS
+// =============================================================================
+
 export async function getCatalogosMipyme(req, res) {
   try {
     const catalogos = await obtenerCatalogosRegistro();
     return res.json(catalogos);
   } catch (error) {
-    console.error("Error al cargar catálogos MiPyME:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al obtener catálogos para el registro." });
+    console.error('Error al cargar catálogos MiPyME:', error);
+    return res.status(500).json({ error: 'Error al obtener catálogos para el registro.' });
   }
 }
-
-/// REGISTRO DE LA MIPYME//
 
 export async function evaluarPasoMipyme(req, res) {
   try {
     const paso = Number(req.body.paso);
     const files = req.files || {};
+    const rfcLimpio = String(req.body.rfc || '').trim().toUpperCase();
+    const curpLimpia = String(req.body.curp || '').trim().toUpperCase();
+    const nombreComercial = String(req.body.nombre_comercial || '').trim();
 
-    // PASO 1: Existencia Fiscal + CSF
+    if (![1, 2, 3, 4].includes(paso)) {
+      return res.status(400).json({ error: 'Número de paso no válido.' });
+    }
+
+    // Verificar si el RFC o CURP ya está bloqueado por intentos fallidos previos
+    if (rfcLimpio || curpLimpia) {
+      const registroIntento = await obtenerIntentosRegistro(rfcLimpio, curpLimpia);
+      if (registroIntento?.bloqueado) {
+        return res.status(403).json({
+          paso,
+          estado: 'ROJO',
+          bloqueado: true,
+          intentos_restantes: 0,
+          error: registroIntento.motivo_bloqueo || 'Este RFC/CURP se encuentra bloqueado por haber superado los intentos permitidos.'
+        });
+      }
+    }
+
+    // PASO 1: EXISTENCIA FISCAL (SAT + EFOS + QR CSF)
+    
     if (paso === 1) {
       const {
         tipo_persona,
-        nombre_comercial,
-        representante_legal,
-        rfc,
         id_giro,
         cp_fiscal,
+        calle_fiscal,
+        numero_fiscal,
+        id_alcaldia_fiscal
       } = req.body;
-      const rfcLimpio = (rfc || "").trim().toUpperCase();
 
-      if (
-        !tipo_persona ||
-        !nombre_comercial ||
-        !representante_legal ||
-        !rfcLimpio ||
-        !id_giro
-      ) {
-        return res
-          .status(400)
-          .json({
-            error: "Completa todos los campos obligatorios del Paso 1.",
-          });
+      if (!tipo_persona || !nombreComercial || !rfcLimpio || !id_giro || !cp_fiscal || !calle_fiscal || !numero_fiscal || !id_alcaldia_fiscal) {
+        return res.status(400).json({ error: 'Completa todos los campos obligatorios del Paso 1.' });
       }
 
-      // Bloqueo inmediato si figura en EFOS (Art. 69-B)
-      if (LISTA_EFOS_SAT.has(rfcLimpio)) {
-        return res.status(403).json({
-          estado: "ROJO",
-          error:
-            "Registro bloqueado: el RFC figura en el listado definitivo de EFOS (Art. 69-B del SAT).",
-        });
-      }
-
-      // Validar RFC
+      // Validar formato oficial de RFC (12 Moral / 13 Física)
       const regexMoral = /^[A-ZÑ&]{3}\d{6}[A-Z0-9]{3}$/;
       const regexFisica = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
-      const rfcValido =
-        tipo_persona === "MORAL"
-          ? regexMoral.test(rfcLimpio)
-          : regexFisica.test(rfcLimpio);
+      const rfcValido = tipo_persona === 'MORAL' ? regexMoral.test(rfcLimpio) : regexFisica.test(rfcLimpio);
 
       if (!rfcValido) {
-        return res.status(400).json({
-          estado: "ROJO",
-          error: `Formato de RFC inválido para Persona ${tipo_persona === "MORAL" ? "Moral (12 caracteres)" : "Física (13 caracteres)"}.`,
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `Formato de RFC inválido para Persona ${tipo_persona === 'MORAL' ? 'Moral (12 caracteres)' : 'Física (13 caracteres)'}.`
         });
       }
 
-      const resultadoPdf = await analizarDocumentoPdf(files.doc_csf?.[0], {
-        esSat: true,
-        rfcEsperado: rfcLimpio,
-      });
-
-      return res.json({
-        paso: 1,
-        estado: resultadoPdf.estado,
-        mensaje: resultadoPdf.mensaje,
-      });
-    }
-
-    // PASO 2: Actividad y Ubicacion
-    if (paso === 2) {
-      const {
-        tipo_persona,
-        cp_operaciones,
-        calle_operaciones,
-        numero_operaciones,
-        geolocalizado,
-      } = req.body;
-
-      if (!cp_operaciones || !calle_operaciones || !numero_operaciones) {
-        return res
-          .status(400)
-          .json({ error: "Completa el domicilio de operaciones." });
+      // Verificar duplicidad de RFC y Nombre Comercial en WorkGuard
+      const duplicados = await verificarDuplicadosPaso1(rfcLimpio, nombreComercial);
+      if (duplicados.existeRfc) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: true,
+          mensaje: 'Este RFC ya cuenta con una empresa registrada en WorkGuard.'
+        });
+      }
+      if (duplicados.existeNombre) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'El Nombre Comercial ingresado ya está registrado por otra MiPyME en WorkGuard.'
+        });
       }
 
-      const resComprobante = await analizarDocumentoPdf(
-        files.doc_comprobante?.[0],
-        {
-          cpEsperado: cp_operaciones.trim(),
-        },
-      );
+      // Revisar Listas Negras 
+      const chequeoNegra = await verificarListasNegras({
+        rfc: rfcLimpio,
+        nombreComercial
+      });
+      if (chequeoNegra.enListaNegra) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: true,
+          mensaje: chequeoNegra.motivo
+        });
+      }
 
-      let estadoPaso = resComprobante.estado;
-      let mensajePaso = resComprobante.mensaje;
+      // Analizar PDF de Constancia de Situación Fiscal + Código QR oficial del SAT
+      const docCsf = files.doc_csf?.[0];
+      if (!docCsf) {
+        return res.status(400).json({ error: 'Debes adjuntar tu Constancia de Situación Fiscal en PDF.' });
+      }
 
-      if (tipo_persona === "MORAL") {
-        const resActa = await analizarDocumentoPdf(files.doc_acta?.[0], {});
-        if (resActa.estado === "NARANJA") {
-          estadoPaso = "NARANJA";
-          mensajePaso = `Acta Constitutiva: ${resActa.mensaje}`;
+      const { textoNormalizado, fueEditado } = await leerPdfMemoria(docCsf);
+
+      if (textoNormalizado.length < 40) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'El PDF de la Constancia parece ser una imagen escaneada sin texto digital. Descarga el PDF original desde el portal del SAT.'
+        });
+      }
+
+      if (fueEditado) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'Se detectaron metadatos de edición externa en la Constancia. Sube el archivo original sin modificar.'
+        });
+      }
+
+      if (!textoNormalizado.includes(rfcLimpio) || !textoNormalizado.includes('CONSTANCIA DE SITUACION FISCAL')) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `El documento cargado no corresponde a una Constancia de Situación Fiscal válida para el RFC ${rfcLimpio}.`
+        });
+      }
+
+      // Validar Código Postal fiscal en la Constancia SAT
+      const cpFiscalLimpio = String(cp_fiscal).trim();
+      if (!/^\d{5}$/.test(cpFiscalLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'El Código Postal fiscal debe tener exactamente 5 dígitos.'
+        });
+      }
+
+      // Validar si es de CDMX (01000 al 16999)
+      /**const prefijoCpFiscal = Number(cpFiscalLimpio.slice(0, 2));
+      if (prefijoCpFiscal < 1 || prefijoCpFiscal > 16) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `El Código Postal ${cpFiscalLimpio} no pertenece a la Ciudad de México. Actualmente WorkGuard opera con cobertura en CDMX.`
+        });
+      }*/
+
+      if (!textoNormalizado.includes(cpFiscalLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: `El Código Postal fiscal (${cpFiscalLimpio}) no coincide con el registrado en tu Constancia de Situación Fiscal.`
+        });
+      }
+
+      if (textoNormalizado.includes('VIALIDAD')) {
+        const palabrasCalleFiscal = normalizarTexto(calle_fiscal)
+          .split(' ')
+          .filter((w) => w.length >= 4);
+
+        if (palabrasCalleFiscal.length > 0 && !palabrasCalleFiscal.some((w) => textoNormalizado.includes(w))) {
+          return responderFalloPaso(res, {
+            rfc: rfcLimpio,
+            nombreComercial,
+            paso: 1,
+            esRojo: false,
+            mensaje: 'La calle del domicilio fiscal no coincide con la asentada en tu Constancia de Situación Fiscal.'
+          });
         }
       }
 
-      if (geolocalizado !== "true" && estadoPaso === "VERDE") {
-        estadoPaso = "NARANJA";
-        mensajePaso =
-          "El domicilio no pudo confirmarse exactamente en el mapa de CDMX; requiere revisión manual.";
+      // Validar Código QR oficial del SAT (siat.sat.gob.mx + RFC)
+      const contenidoQr = await leerQrDePdf(docCsf.buffer);
+
+      if (!contenidoQr || !contenidoQr.toLowerCase().includes('sat.gob.mx') || !contenidoQr.toUpperCase().includes(rfcLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 1,
+          esRojo: false,
+          mensaje: 'No se pudo verificar el Código QR oficial del SAT en la Constancia o el RFC del QR no coincide.'
+        });
       }
 
-      return res.json({ paso: 2, estado: estadoPaso, mensaje: mensajePaso });
+      return res.json({
+        paso: 1,
+        estado: 'VERDE',
+        mensaje: 'Paso 1 validado en Verde: Constancia SAT, Código QR oficial y estatus fiscal verificados.'
+      });
     }
 
-    // PASO 3: Represente y CURP
+    // -------------------------------------------------------------------------
+    // PASO 2: ACTIVIDAD Y UBICACIÓN (Mapa + Comprobante + Cruce DENUE INEGI)
+    // -------------------------------------------------------------------------
+    if (paso === 2) {
+      const {
+        cp_operaciones,
+        calle_operaciones,
+        numero_operaciones,
+        id_alcaldia_operaciones,
+        geolocalizado
+      } = req.body;
+
+      if (!cp_operaciones || !calle_operaciones || !numero_operaciones || !id_alcaldia_operaciones) {
+        return res.status(400).json({ error: 'Completa todos los campos del domicilio de operaciones.' });
+      }
+
+      if (!/^\d{5}$/.test(String(cp_operaciones).trim())) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 2,
+          esRojo: false,
+          mensaje: 'El Código Postal de operaciones debe tener exactamente 5 dígitos.'
+        });
+      }
+
+      if (geolocalizado !== 'true') {
+        return res.status(400).json({
+          error: 'Presiona "Ubicar en Mapa" para confirmar las coordenadas del domicilio antes de continuar.'
+        });
+      }
+
+      const docComprobante = files.doc_comprobante?.[0];
+      if (!docComprobante) {
+        return res.status(400).json({ error: 'Debes adjuntar tu Comprobante de Domicilio en PDF.' });
+      }
+
+      const { textoNormalizado, fueEditado } = await leerPdfMemoria(docComprobante);
+
+      if (textoNormalizado.length < 40) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 2,
+          esRojo: false,
+          mensaje: 'El Comprobante de Domicilio parece una imagen escaneada sin texto legible. Sube el recibo digital en PDF.'
+        });
+      }
+
+      if (fueEditado) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 2,
+          esRojo: false,
+          mensaje: 'Se detectaron rastros de edición externa en el Comprobante de Domicilio.'
+        });
+      }
+
+      const cpLimpio = String(cp_operaciones).trim();
+      const palabrasCalle = normalizarTexto(calle_operaciones).split(' ').filter((w) => w.length >= 4);
+      const coincideCp = textoNormalizado.includes(cpLimpio);
+      const coincideCalle = palabrasCalle.some((w) => textoNormalizado.includes(w));
+
+      if (!coincideCp && !coincideCalle) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 2,
+          esRojo: false,
+          mensaje: `El Comprobante de Domicilio no coincide con la calle ni el Código Postal (${cpLimpio}) capturados.`
+        });
+      }
+
+      // Consulta cruzada opcional con DENUE (INEGI)
+      const denue = await consultarDenueInegi({
+        nombreComercial,
+        cp: cpLimpio
+      });
+
+      return res.json({
+        paso: 2,
+        estado: 'VERDE',
+        validado_denue: Boolean(denue.coincide),
+        mensaje: denue.coincide
+          ? `Paso 2 validado en Verde + Establecimiento confirmado en DENUE INEGI (${denue.establecimiento}).`
+          : 'Paso 2 validado en Verde: Domicilio verificado en mapa y comprobante.'
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // PASO 3: REPRESENTANTE LEGAL / TITULAR (Nombre + CURP + PDF gob.mx)
+    // -------------------------------------------------------------------------
     if (paso === 3) {
-      const { curp, tipo_persona, rfc } = req.body;
-      const curpLimpia = (curp || "").trim().toUpperCase();
-      const regexCurp =
-        /^[A-Z][AEIOUX][A-Z]{2}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[HM](AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d$/;
+      const { nombre_completo, tipo_persona } = req.body;
+
+      if (!nombre_completo || !curpLimpia) {
+        return res.status(400).json({ error: 'Ingresa el nombre completo y la CURP del representante o titular.' });
+      }
+
+      const regexCurp = /^[A-Z][AEIOUX][A-Z]{2}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[HMX][A-Z]{2}[B-DF-HJ-NP-TV-Z]{3}[0-9A-Z]\d$/;
 
       if (!regexCurp.test(curpLimpia)) {
-        return res.status(400).json({
-          estado: "ROJO",
-          error:
-            "La CURP ingresada no cumple con la estructura oficial de 18 caracteres de RENAPO.",
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: false,
+          mensaje: 'La CURP ingresada no cumple con la estructura oficial de 18 caracteres de RENAPO.'
         });
       }
 
-      // Si es Persona Física, las primeras 10 posiciones del CURP y RFC deben coincidir
-      if (
-        tipo_persona === "FISICA" &&
-        rfc &&
-        curpLimpia.slice(0, 10) !== rfc.trim().toUpperCase().slice(0, 10)
-      ) {
-        return res.status(400).json({
-          estado: "ROJO",
-          error:
-            "Los datos de nacimiento/nombre de la CURP no coinciden con el RFC de Persona Física.",
+      // Verificar si la CURP ya está registrada en otro representante
+      const curpExiste = await verificarCurpDuplicada(curpLimpia);
+      if (curpExiste) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: true,
+          mensaje: 'Esta CURP ya se encuentra asociada a otra empresa registrada en WorkGuard.'
         });
       }
-      const resAcred = await analizarDocumentoPdf(
-        files.doc_acreditacion?.[0],
-        {},
-      );
+
+      // Verificar si la CURP pertenece a alguien sancionado en Listado Negro
+      const chequeoNegraCurp = await verificarListasNegras({ curp: curpLimpia });
+      if (chequeoNegraCurp.enListaNegra) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: true,
+          mensaje: chequeoNegraCurp.motivo
+        });
+      }
+
+      // Si es Persona Física, los primeros 10 dígitos de CURP y RFC deben coincidir
+      if (tipo_persona === 'FISICA' && rfcLimpio.length === 13) {
+        if (curpLimpia.slice(0, 10) !== rfcLimpio.slice(0, 10)) {
+          return responderFalloPaso(res, {
+            rfc: rfcLimpio,
+            curp: curpLimpia,
+            nombreComercial,
+            paso: 3,
+            esRojo: false,
+            mensaje: 'Para Persona Física, los primeros 10 caracteres de la CURP deben coincidir con el RFC.'
+          });
+        }
+      }
+
+      const docCurp = files.doc_curp?.[0];
+      if (!docCurp) {
+        return res.status(400).json({ error: 'Debes adjuntar la Constancia oficial de la CURP en PDF.' });
+      }
+
+      const { textoNormalizado, fueEditado } = await leerPdfMemoria(docCurp);
+
+      if (textoNormalizado.length < 40) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: false,
+          mensaje: 'El PDF de la CURP não contiene texto digital legible. Descárgalo directamente de gob.mx/curp.'
+        });
+      }
+
+      if (fueEditado) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: false,
+          mensaje: 'Se detectaron rastros de edición externa en la Constancia de CURP.'
+        });
+      }
+
+      if (!textoNormalizado.includes(curpLimpia) || !textoNormalizado.includes('CLAVE UNICA DE REGISTRO DE POBLACION')) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: false,
+          mensaje: 'El PDF adjunto no corresponde a una Constancia oficial de CURP válida o la clave no coincide.'
+        });
+      }
+
+      // Verificar que el nombre ingresado aparezca en la constancia CURP
+      const palabrasNombre = normalizarTexto(nombre_completo).split(' ').filter((w) => w.length >= 3);
+      const coincidencias = palabrasNombre.filter((w) => textoNormalizado.includes(w));
+
+      if (palabrasNombre.length > 0 && coincidencias.length === 0) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          curp: curpLimpia,
+          nombreComercial,
+          paso: 3,
+          esRojo: false,
+          mensaje: 'El nombre completo ingresado no coincide con el titular de la Constancia CURP.'
+        });
+      }
+
       return res.json({
         paso: 3,
-        estado: resAcred.estado,
-        mensaje:
-          resAcred.estado === "VERDE"
-            ? "CURP válida y documento de acreditación verificado."
-            : resAcred.mensaje,
+        estado: 'VERDE',
+        mensaje: 'Paso 3 validado en Verde: Identidad y constancia CURP verificadas.'
       });
     }
 
-    // PASO 4: Tamaño de la Empresa e Irregularidades fiscales con Opinión 32-D y Estratificación DOF 2009
-    if (paso === 4) { 
-      const { numero_trabajadores, rfc } = req.body;
-      const trabajadores = Number(numero_trabajadores);
+    // -------------------------------------------------------------------------
+    // PASO 4: CUMPLIMIENTO Y TAMAÑO (Trabajadores DOF + Opinión 32-D + QR SAT)
+    // -------------------------------------------------------------------------
+    if (paso === 4) {
+      const trabajadores = Number(req.body.numero_trabajadores);
+
       if (!trabajadores || trabajadores < 1) {
-        return res
-          .status(400)
-          .json({
-            error: "Ingresa un número válido de trabajadores (mínimo 1).",
-          });
+        return res.status(400).json({ error: 'Ingresa un número válido de trabajadores (mínimo 1).' });
       }
+
       if (trabajadores > 250) {
-        return res.status(403).json({
-          estado: "ROJO",
-          error:
-            "La empresa excede el límite de 250 trabajadores para ser considerada MiPyME según el DOF.",
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: true,
+          mensaje: 'La empresa excede el límite de 250 trabajadores para clasificarse como MiPyME según el DOF.'
         });
       }
-      const res32D = await analizarDocumentoPdf(files.doc_opinion_32d?.[0], {
-        esSat: true,
-        rfcEsperado: (rfc || "").trim().toUpperCase(),
-        validar32D: true,
-      });
 
-      // Clasificación oficial por rango de trabajadores
-      let tamanoSugerido = "Microempresa";
-      if (trabajadores >= 11 && trabajadores <= 50)
-        tamanoSugerido = "Pequeña empresa";
-      if (trabajadores >= 51 && trabajadores <= 250)
-        tamanoSugerido = "Mediana empresa";
+      const tamanoEtiqueta = calcularTamanoDOF(trabajadores);
+      const idTamano = await obtenerIdTamanoPorEtiqueta(tamanoEtiqueta);
+
+      const doc32d = files.doc_opinion_32d?.[0];
+      if (!doc32d) {
+        return res.status(400).json({ error: 'Debes adjuntar la Opinión del Cumplimiento de Obligaciones Fiscales (32-D) en PDF.' });
+      }
+
+      const { textoNormalizado, fueEditado } = await leerPdfMemoria(doc32d);
+
+      if (textoNormalizado.length < 40) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: false,
+          mensaje: 'El PDF de la Opinión 32-D no tiene texto legible. Descarga el documento original desde el portal del SAT.'
+        });
+      }
+
+      if (fueEditado) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: false,
+          mensaje: 'Se detectaron metadatos de edición externa en la Opinión 32-D.'
+        });
+      }
+
+      if (!textoNormalizado.includes(rfcLimpio) || !textoNormalizado.includes('OPINION DEL CUMPLIMIENTO')) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: false,
+          mensaje: `El documento adjunto no corresponde a una Opinión del Cumplimiento (32-D) válida para el RFC ${rfcLimpio}.`
+        });
+      }
+
+      if (textoNormalizado.includes('NEGATIVO') && !textoNormalizado.includes('POSITIVO')) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: true,
+          mensaje: 'La Opinión del Cumplimiento (32-D) reporta sentido NEGATIVO ante el SAT.'
+        });
+      }
+
+      if (!textoNormalizado.includes('POSITIVO')) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: false,
+          mensaje: 'No se pudo confirmar el sentido POSITIVO en la Opinión del Cumplimiento 32-D.'
+        });
+      }
+
+      // Validar Código QR oficial del SAT en la Opinión 32-D
+      const qr32d = await leerQrDePdf(doc32d.buffer);
+
+      if (!qr32d || !qr32d.toLowerCase().includes('sat.gob.mx') || !qr32d.toUpperCase().includes(rfcLimpio)) {
+        return responderFalloPaso(res, {
+          rfc: rfcLimpio,
+          nombreComercial,
+          paso: 4,
+          esRojo: false,
+          mensaje: 'No se pudo verificar el Código QR oficial del SAT en la Opinión 32-D o el RFC no coincide.'
+        });
+      }
+
       return res.json({
         paso: 4,
-        estado: res32D.estado,
-        tamano_calculado: tamanoSugerido,
-        mensaje: res32D.mensaje,
+        estado: 'VERDE',
+        tamano_calculado: tamanoEtiqueta,
+        id_tamano: idTamano,
+        mensaje: `Paso 4 validado en Verde: Opinión 32-D POSITIVA (con QR SAT) y tamaño clasificado como ${tamanoEtiqueta}.`
       });
     }
-    return res.status(400).json({ error: "Número de paso no válido." });
   } catch (error) {
-    console.error("Error al evaluar paso MiPyME:", error);
-    return res.status(500).json({ error: "Error interno al validar el paso." });
+    console.error('Error al evaluar paso MiPyME:', error);
+    return res.status(500).json({ error: 'Error interno al validar el paso.' });
   }
 }
 
-
-
-// Registrar MiPyme al COMPLETAR LOS PASOS 
+// =============================================================================
+// REGISTRO DEFINITIVO DE LA MIPYME (CON SELLO WORKGUARD AUTOMÁTICO)
+// =============================================================================
 export async function registrarMipyme(req, res) {
   try {
-    const datos =
-      typeof req.body.payload === "string"
-        ? JSON.parse(req.body.payload)
-        : req.body;
+    const datos = typeof req.body.payload === 'string'
+      ? JSON.parse(req.body.payload)
+      : req.body;
+
     const {
       usuario,
       contrasena,
@@ -375,172 +768,114 @@ export async function registrarMipyme(req, res) {
       domicilio_operaciones,
       actividad,
       representante,
-      resultados_pasos,
+      validado_denue
     } = datos;
-    if (!usuario || !contrasena || !nombre_comercial || !rfc || !tipo_persona) {
-      return res
-        .status(400)
-        .json({
-          error: "Faltan datos obligatorios para completar el registro.",
-        });
-    }
-    const rfcLimpio = rfc.trim().toUpperCase();
-    if (LISTA_EFOS_SAT.has(rfcLimpio)) {
-      return res
-        .status(403)
-        .json({
-          error:
-            "No es posible registrar una empresa incluida en el listado EFOS del SAT.",
-        });
-    }
-    const dup = await verificarDuplicadosRegistro(usuario.trim(), rfcLimpio);
-    if (dup.duplicado) {
-      return res.status(409).json({ error: dup.mensaje });
+
+    if (!usuario || !contrasena || !nombre_comercial || !rfc || !tipo_persona || !representante?.curp || !representante?.nombre_completo) {
+      return res.status(400).json({ error: 'Faltan datos obligatorios para completar el registro.' });
     }
 
-    // Si algún paso quedó en Naranja poner advertencia transparente
-    const pasosObj = resultados_pasos || {};
-    const tieneNaranjas = Object.values(pasosObj).some(
-      (p) => p?.estado === "NARANJA",
-    );
-    const mensajePyme = tieneNaranjas
-      ? "Tu cuenta fue creada, pero tienes indicadores en NARANJA. Mientras un Administrador revisa tu caso, tu empresa NO será visible para los consultores ni tendrá el Sello WorkGuard. Te recomendamos tener listos tus PDFs originales descargados del portal del SAT para agilizar la validación."
-      : "Todos tus indicadores automáticos salieron en VERDE. Tu solicitud pasó a revisión final del Administrador para activar tu Sello WorkGuard y hacer visible tu perfil a los consultores.";
-    const dictamenVerificacion = {
-      estatus: "PENDIENTE_REVISION",
-      sello_aprobado: false,
-      tiene_alertas_naranja: tieneNaranjas,
-      motivo_rechazo: null,
-      mensaje_pyme: mensajePyme,
-      pasos: pasosObj,
-      fecha_registro: new Date().toISOString(),
-    };
+    const rfcLimpio = rfc.trim().toUpperCase();
+    const curpLimpia = representante.curp.trim().toUpperCase();
+    const usuarioLimpio = usuario.trim();
+
+    // 1. Verificar que no exista bloqueo previo ni inclusión en Listas Negras
+    const intentoPrevio = await obtenerIntentosRegistro(rfcLimpio, curpLimpia);
+    if (intentoPrevio?.bloqueado) {
+      return res.status(403).json({
+        error: intentoPrevio.motivo_bloqueo || 'Este RFC/CURP se encuentra bloqueado para registro.'
+      });
+    }
+
+    const chequeoNegra = await verificarListasNegras({
+      rfc: rfcLimpio,
+      curp: curpLimpia,
+      nombreComercial: nombre_comercial
+    });
+    if (chequeoNegra.enListaNegra) {
+      return res.status(403).json({ error: chequeoNegra.motivo });
+    }
+
+    // 2. Verificar unicidad de usuario, RFC, Nombre Comercial y CURP
+    const [usuarioOcupado, dupPaso1, curpOcupada] = await Promise.all([
+      verificarUsuarioDuplicado(usuarioLimpio),
+      verificarDuplicadosPaso1(rfcLimpio, nombre_comercial.trim()),
+      verificarCurpDuplicada(curpLimpia)
+    ]);
+
+    if (usuarioOcupado) {
+      return res.status(409).json({ error: 'Ese nombre de usuario ya está ocupado en WorkGuard.' });
+    }
+    if (dupPaso1.existeRfc) {
+      return res.status(409).json({ error: 'Este RFC ya se encuentra registrado en WorkGuard.' });
+    }
+    if (dupPaso1.existeNombre) {
+      return res.status(409).json({ error: 'Este Nombre Comercial ya se encuentra registrado en WorkGuard.' });
+    }
+    if (curpOcupada) {
+      return res.status(409).json({ error: 'Esta CURP ya está asociada a otra cuenta en WorkGuard.' });
+    }
+
+    // 3. Calcular id_tamano oficial DOF si no viene informado
+    const etiquetaDof = calcularTamanoDOF(numero_trabajadores) || 'Micro';
+    const idTamanoFinal = id_tamano || (await obtenerIdTamanoPorEtiqueta(etiquetaDof));
     const contrasenaHash = await bcrypt.hash(contrasena, 10);
+
     const creada = await crearRegistroMipymeCompleto({
-      usuario: usuario.trim(),
+      usuario: usuarioLimpio,
       contrasena_hash: contrasenaHash,
       nombre_comercial: nombre_comercial.trim(),
       tipo_persona,
       rfc: rfcLimpio,
       id_giro,
       numero_trabajadores,
-      id_tamano,
+      id_tamano: idTamanoFinal,
       domicilio_fiscal,
       domicilio_operaciones,
       actividad: actividad || {},
       representante: {
         nombre_completo: representante.nombre_completo.trim(),
-        curp: representante.curp.trim().toUpperCase(),
+        curp: curpLimpia
       },
-      dictamen_verificacion: dictamenVerificacion,
+      validado_denue: Boolean(validado_denue)
     });
+
+    // 4. Eliminar registro temporal de intentos fallidos
+    await limpiarIntentosRegistro(rfcLimpio);
+
     return res.status(201).json({
-      mensaje: "Registro de MiPyME completado.",
-      mipyme: creada,
-      advertencia_naranja: tieneNaranjas,
-      detalle_estatus: mensajePyme,
+      mensaje: '¡Registro completado con éxito! Tu Sello WorkGuard ya está activo.',
+      mipyme: creada
     });
   } catch (error) {
-    console.error("Error al registrar MiPyME:", error);
-    return res
-      .status(500)
-      .json({ error: "Error interno al guardar el registro de la MiPyME." });
+    console.error('Error al registrar MiPyME:', error);
+    return res.status(500).json({ error: 'Error interno al guardar el registro de la MiPyME.' });
   }
 }
 
-// listar solo empresas aprobadas Consultor
+// =============================================================================
+// ENDPOINTS DE CONSULTA (CONSULTOR Y SUPERVISIÓN ADMIN)
+// =============================================================================
 export async function getMipymesPublicas(req, res) {
   try {
     const empresas = await listarMipymesAprobadas();
     return res.json(empresas);
   } catch (error) {
-    console.error("Error al listar MiPyMEs aprobadas:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al obtener el directorio de MiPyMEs." });
-  }
-}
-// Listado completo para el Admin
-export async function getSolicitudesMipymeAdmin(req, res) {
-  try {
-    const empresas = await listarMipymesParaAdmin();
-    return res.json(empresas);
-  } catch (error) {
-    console.error("Error al listar solicitudes MiPyME para admin:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al obtener las solicitudes de MiPyMEs." });
+    console.error('Error al listar MiPyMEs:', error);
+    return res.status(500).json({ error: 'Error al obtener el directorio de MiPyMEs.' });
   }
 }
 
-// Obtener detalle de un Empresa
 export async function getDetalleMipyme(req, res) {
   try {
     const id = Number(req.params.id);
     const empresa = await obtenerMipymePorId(id);
     if (!empresa) {
-      return res.status(404).json({ error: "MiPyME no encontrada." });
-    }
-
-    // Bloqueamos empresas no aprobadas a los consultores 
-    if (
-      req.usuario.rol === "consultor" &&
-      !empresa.dictamen_verificacion?.sello_aprobado
-    ) {
-      return res
-        .status(403)
-        .json({
-          error: "Esta empresa aún se encuentra en proceso de verificación.",
-        });
+      return res.status(404).json({ error: 'MiPyME no encontrada.' });
     }
     return res.json(empresa);
   } catch (error) {
-    console.error("Error al obtener detalle de MiPyME:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al obtener información de la MiPyME." });
+    console.error('Error al obtener detalle de MiPyME:', error);
+    return res.status(500).json({ error: 'Error al obtener información de la MiPyME.' });
   }
 }
-
-// Gestionar el registro de las Pymes 
-export async function dictaminarMipyme(req, res) {
-  try {
-    const id = Number(req.params.id);
-    const { aprobar, motivo_rechazo } = req.body;
-    if (typeof aprobar !== "boolean") {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Debes indicar si apruebas (true) o rechazas (false) la solicitud.",
-        });
-    }
-    if (!aprobar && (!motivo_rechazo || !motivo_rechazo.trim())) {
-      return res
-        .status(400)
-        .json({
-          error:
-            "Debes escribir el motivo oficial por el cual se rechaza la solicitud.",
-        });
-    }
-    const actualizada = await actualizarDictamenAdmin(id, {
-      aprobar,
-      motivo_rechazo: motivo_rechazo?.trim(),
-    });
-    if (!actualizada) {
-      return res.status(404).json({ error: "MiPyME no encontrada." });
-    }
-    return res.json({
-      mensaje: aprobar
-        ? "MiPyME aprobada. Ahora cuenta con Sello WorkGuard y es visible para los consultores."
-        : "Solicitud rechazada y motivo notificado a la MiPyME.",
-      mipyme: actualizada,
-    });
-  } catch (error) {
-    console.error("Error al dictaminar MiPyME:", error);
-    return res
-      .status(500)
-      .json({ error: "Error al actualizar el dictamen de la MiPyME." });
-  }
-}
-
