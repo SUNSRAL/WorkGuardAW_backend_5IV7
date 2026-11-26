@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
-import { obtenerConsultorPorId, crearConsultor, actualizarConsultor } from '../modules/usuario_module.js';
+import { obtenerConsultorPorId, crearConsultor, actualizarConsultor, guardarFotoPerfil } from '../modules/usuario_module.js';
+
 
 export async function obtenerConsultor(req, res) {
 
@@ -136,6 +137,48 @@ export async function editarConsultor(req, res) {
 
         return res.status(500).json({
             error: 'Error interno del servidor.'
+        });
+    }
+}
+
+export async function cambiarFotoPerfil(req, res) {
+
+    const idConsultor = Number.parseInt(req.params.id, 10);
+
+    if (!Number.isInteger(idConsultor)) {
+        return res.status(400).json({
+            error: 'Identificador de consultor no válido.'
+        });
+    }
+    if (req.usuario.id !== idConsultor) {
+        return res.status(403).json({
+            error: 'No puedes modificar la fotografía de otro consultor.'
+        });
+    }
+    if (!req.file) {
+        return res.status(400).json({
+            error: 'Debes seleccionar una fotografía.'
+        });
+    }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(req.file.mimetype)) {
+        return res.status(400).json({
+            error: 'Formato de imagen no permitido.'
+        });
+    }
+    try {
+        const consultor = await guardarFotoPerfil(
+            idConsultor,
+            req.file
+        );
+
+        return res.json({
+            mensaje: 'Fotografía actualizada correctamente.',
+            foto_perfil: consultor.foto_perfil
+        });
+    } catch (error) {
+        console.error('Error al guardar fotografía:', error);
+        return res.status(500).json({
+            error: 'No fue posible guardar la fotografía.'
         });
     }
 }
