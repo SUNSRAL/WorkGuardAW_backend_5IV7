@@ -4,7 +4,8 @@ import { obtenerListaNegra, enviarEmpresaAListaNegra } from '../controllers/list
 
 const router = Router();
 
-router.get('/', requiereSesion, requiereRol('administrador', 'consultor'), obtenerListaNegra);
+router.get('/', requiereSesion, requiereRol('admin', 'consultor'), obtenerListaNegra);
+router.post('/reportes/:idReporte', requiereSesion, requiereRol('admin'), enviarEmpresaAListaNegra);
 router.post('/reportes/:idReporte', requiereSesion, requiereRol('administrador'), enviarEmpresaAListaNegra);
 
 export default router;
