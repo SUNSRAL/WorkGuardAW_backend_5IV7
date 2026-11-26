@@ -70,18 +70,72 @@ export async function registrarConsultor(req, res) {
 }
 
 export async function editarConsultor(req, res) {
+
     const idConsultor = Number.parseInt(req.params.id, 10);
+
     if (!Number.isInteger(idConsultor)) {
-        return res.status(400).json({ error: 'Identificador de consultor no válido.' });
+        return res.status(400).json({
+            error: 'Identificador de consultor no válido.'
+        });
     }
-    try {
-        const actualizado = await actualizarConsultor(idConsultor, req.body);
-        if (!actualizado) {
-            return res.status(404).json({ error: 'Consultor no encontrado.' });
+
+    // Comprobar que solamente edite su propia cuenta
+    if (req.usuario.id !== idConsultor) {
+        return res.status(403).json({
+            error: 'No puedes modificar la cuenta de otro consultor.'
+        });
+    }
+
+    // Obtener únicamente los campos permitidos
+    const { correo_electronico, nombre_completo } = req.body;
+
+    if (
+        correo_electronico === undefined &&
+        nombre_completo === undefined
+    ) {
+        return res.status(400).json({
+            error: 'No proporcionaste información para actualizar.'
+        });
+    }
+
+    // Validar correo si se proporcionó
+    if (correo_electronico !== undefined) {
+
+        const correo = correo_electronico.trim();
+
+        const expresionCorreo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!expresionCorreo.test(correo)) {
+            return res.status(400).json({
+                error: 'El correo electrónico no es válido.'
+            });
         }
-        return res.json({ mensaje: 'Perfil actualizado.', consultor: actualizado });
+    }
+
+    try {
+
+        const actualizado = await actualizarConsultor(idConsultor, {
+            correo_electronico,
+            nombre_completo
+        });
+
+        if (!actualizado) {
+            return res.status(404).json({
+                error: 'Consultor no encontrado.'
+            });
+        }
+
+        return res.json({
+            mensaje: 'Perfil actualizado correctamente.',
+            consultor: actualizado
+        });
+
     } catch (error) {
+
         console.error('Error al actualizar consultor:', error);
-        return res.status(500).json({ error: 'Error interno del servidor.' });
+
+        return res.status(500).json({
+            error: 'Error interno del servidor.'
+        });
     }
 }
