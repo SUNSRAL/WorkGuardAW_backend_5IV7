@@ -1,7 +1,5 @@
-import express from 'express';
 import cors from 'cors';
 import express from 'express';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth_routes.js';
 import reporteRoutes from './routes/reporte_routes.js';
