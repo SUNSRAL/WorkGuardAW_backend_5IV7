@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
-import { obtenerConsultorPorId, crearConsultor, actualizarConsultor, guardarFotoPerfil } from '../modules/usuario_module.js';
+import { obtenerConsultorPorId, crearConsultor, actualizarConsultor, guardarFotoPerfil,
+    listarFavoritosConsultor, verificarFavorito,toggleFavoritoMipyme
+} from '../modules/usuario_module.js';
 
 
 export async function obtenerConsultor(req, res) {
@@ -181,4 +183,40 @@ export async function cambiarFotoPerfil(req, res) {
             error: 'No fue posible guardar la fotografía.'
         });
     }
+}
+
+export async function getMisFavoritos(req, res) {
+  try {
+    const empresas = await listarFavoritosConsultor(req.usuario.id);
+    return res.json(empresas);
+  } catch (error) {
+    console.error("Error al listar favoritos:", error);
+    return res.status(500).json({ error: "No se pudieron cargar tus empresas guardadas." });
+  }
+}
+
+export async function getEstadoFavorito(req, res) {
+  try {
+    const guardado = await verificarFavorito({
+      idConsultor: req.usuario.id,
+      idMipyme: req.params.idMipyme,
+    });
+    return res.json({ guardado });
+  } catch (error) {
+    console.error("Error al verificar favorito:", error);
+    return res.status(500).json({ error: "No se pudo verificar el estado de guardado." });
+  }
+}
+
+export async function postToggleFavorito(req, res) {
+  try {
+    const resultado = await toggleFavoritoMipyme({
+      idConsultor: req.usuario.id,
+      idMipyme: req.params.idMipyme,
+    });
+    return res.json(resultado);
+  } catch (error) {
+    console.error("Error al guardar favorito:", error);
+    return res.status(500).json({ error: "No se pudo actualizar favoritos." });
+  }
 }
