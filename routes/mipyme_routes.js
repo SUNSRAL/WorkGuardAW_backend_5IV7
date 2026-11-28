@@ -53,6 +53,6 @@ router.put("/admin/:id/dictamen", requiereSesion, requiereRol("admin"), dictamin
 
 // Obtencion de la empresa
 router.get("/", requiereSesion, getMipymesPublicas);
-router.get("/:id",requiereSesion,requiereRol("admin", "consultor", "mipyme"),getDetalleMipyme);
+router.get("/:id",requiereSesion,requiereRol("admin", "consultor"),getDetalleMipyme);
 
 export default router;

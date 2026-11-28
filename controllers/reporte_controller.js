@@ -1,7 +1,8 @@
 import {
     crearReporte,
     listarReportes,
-    obtenerReportePorId
+    obtenerReportePorId,
+    rechazarReportePorId
 } from '../modules/reporte_module.js';
 
 const MOTIVOS_VALIDOS = [
@@ -199,5 +200,31 @@ export async function obtenerReporte(req, res) {
         return res.status(500).json({
             error: 'Error interno del servidor.'
         });
+    }
+}
+
+export async function rechazarReporte(req, res) {
+    const idReporte = Number(req.params.id);
+    const motivoRechazo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim() : '';
+
+    if (!Number.isSafeInteger(idReporte) || idReporte <= 0) {
+        return res.status(400).json({ error: 'Identificador de reporte no válido.' });
+    }
+
+    try {
+        const actualizado = await rechazarReportePorId({
+            idReporte,
+            idAdministrador: req.usuario.id,
+            motivoRechazo
+        });
+
+        if (!actualizado) {
+            return res.status(404).json({ error: 'El reporte no existe o ya fue revisado.' });
+        }
+
+        return res.json({ ok: true, reporte: actualizado });
+    } catch (error) {
+        console.error('Error al rechazar el reporte:', error);
+        return res.status(500).json({ error: 'Error interno al rechazar el reporte.' });
     }
 }

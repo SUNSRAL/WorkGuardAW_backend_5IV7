@@ -218,6 +218,31 @@ export async function obtenerReportePorId(idReporte) {
 
     if (!data) return null;
 
+    // Buscar evidencias PDF asociadas al reporte
+    const { data: archivos, error: errorArchivos } = await supabase
+        .from('archivos_reporte')
+        .select('id_archivo, nombre_archivo, ruta_archivo, tipo_archivo, fecha_subida')
+        .eq('id_reporte', idReporte);
+
+    if (errorArchivos) throw errorArchivos;
+
+    const evidencias = await Promise.all(
+        (archivos || []).map(async (arch) => {
+            const { data: signed } = await supabase
+                .storage
+                .from(BUCKET_REPORTES)
+                .createSignedUrl(arch.ruta_archivo, 60 * 60); // URL válida 1 hora
+
+            return {
+                id_archivo: arch.id_archivo,
+                nombre_archivo: arch.nombre_archivo,
+                tipo_archivo: arch.tipo_archivo,
+                fecha_subida: comoUTC(arch.fecha_subida),
+                url: signed?.signedUrl || null
+            };
+        })
+    );
+
     return {
         id_reporte: data.id_reporte,
         id_mipyme: data.id_mipyme,
@@ -240,6 +265,27 @@ export async function obtenerReportePorId(idReporte) {
 
         nombre_comercial: data.mipyme?.nombre_comercial,
         tipo_persona: data.mipyme?.tipo_persona,
-        numero_trabajadores: data.mipyme?.numero_trabajadores
+        numero_trabajadores: data.mipyme?.numero_trabajadores,
+
+        evidencias
     };
+}
+
+// RECHAZAR UN REPORTE (SIN MANDAR A LISTA NEGRA).
+export async function rechazarReportePorId({ idReporte, idAdministrador, motivoRechazo }) {
+    const { data, error } = await supabase
+        .from('reportes')
+        .update({
+            estado: 'RECHAZADO',
+            id_administrador: Number(idAdministrador),
+            fecha_revision: new Date().toISOString(),
+            otro_motivo: motivoRechazo || 'Reporte rechazado tras revisión.'
+        })
+        .eq('id_reporte', Number(idReporte))
+        .eq('estado', 'PENDIENTE')
+        .select('id_reporte, estado, otro_motivo')
+        .maybeSingle();
+
+    if (error) throw error;
+    return data;
 }

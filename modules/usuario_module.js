@@ -72,6 +72,18 @@ export async function guardarFotoPerfil(idConsultor, archivo) {
 }
 
 export async function listarFavoritosConsultor(idConsultor) {
+  // Obtener IDs de empresas sancionadas en la lista negra
+  const { data: sancionadas, error: errLn } = await supabase
+    .from("listado_negro")
+    .select("id_mipyme");
+
+  if (errLn) throw errLn;
+
+  const idsSancionadas = new Set(
+    (sancionadas || []).map((item) => Number(item.id_mipyme))
+  );
+
+  // Obtener los favoritos del consultor
   const { data, error } = await supabase
     .from("favorito_mipyme")
     .select(`
@@ -88,14 +100,18 @@ export async function listarFavoritosConsultor(idConsultor) {
         existencia_fiscal (
           catalogo_giro ( opcion_giro )
         ),
-        fotos_mipyme ( url_imagen, orden )
+        fotos_mipyme ( url_imagen )
       )
     `)
     .eq("id_consultor", Number(idConsultor))
     .order("fecha_guardado", { ascending: false });
 
   if (error) throw error;
-  return (data || []).map((row) => row.mipyme).filter(Boolean);
+
+  // Filtrar las que existan y NO estén en la lista negra
+  return (data || [])
+    .map((f) => f.mipyme)
+    .filter((m) => m && !idsSancionadas.has(Number(m.id_mipyme)));
 }
 
 export async function verificarFavorito({ idConsultor, idMipyme }) {
