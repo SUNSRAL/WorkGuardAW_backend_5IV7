@@ -21,6 +21,7 @@ import {
   eliminarFotoEstablecimiento,
   listarSolicitudesAdmin,
   dictaminarSolicitudMipyme,
+  listarEfosSatAdmin,
 } from "../modules/mipyme_module.js";
 
 const GENERADORES_OFICIALES = [
@@ -1441,5 +1442,17 @@ export async function dictaminarMipyme(req, res) {
     return res
       .status(500)
       .json({ error: "Error al procesar el dictamen de la MiPyME." });
+  }
+}
+
+export async function getEfosSatAdmin(req, res) {
+  try {
+    const busqueda = typeof req.query.q === "string" ? req.query.q : "";
+    const limite = Number(req.query.limit) || 15;
+    const resultado = await listarEfosSatAdmin({ busqueda, limite });
+    return res.json(resultado);
+  } catch (error) {
+    console.error("Error al consultar EFOS SAT:", error);
+    return res.status(500).json({ error: "Error al cargar la lista EFOS del SAT." });
   }
 }

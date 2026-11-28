@@ -6,7 +6,7 @@ const router = Router();
 
 
 router.post('/consultores', registrarConsultor);
-router.get('/consultores/:id', requiereSesion, requiereRol('consultor', 'administrador'), obtenerConsultor);
+router.get('/consultores/:id', requiereSesion, requiereRol('consultor', 'admin'), obtenerConsultor);
 router.put('/consultores/:id', requiereSesion, requiereRol('consultor'), editarConsultor);
 
 export default router;

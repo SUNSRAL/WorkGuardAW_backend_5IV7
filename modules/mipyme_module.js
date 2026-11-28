@@ -698,3 +698,27 @@ export async function dictaminarSolicitudMipyme(
   if (error) throw error;
   return obtenerMipymePorId(idMipyme);
 }
+// Lista el padrón oficial del SAT Art. 69-B (EFOS) para consulta del Administrador
+// Consulta paginada / filtrada del padrón SAT Art. 69-B (EFOS) sin saturar la memoria
+export async function listarEfosSatAdmin({ busqueda = "", limite = 15 } = {}) {
+  const tope = Math.min(Math.max(Number(limite) || 15, 1), 30);
+  let query = supabase
+    .from("lista_negra_sat_efos")
+    .select("rfc, nombre_contribuyente, situacion", { count: "exact" })
+    .order("rfc", { ascending: true })
+    .limit(tope);
+
+  const q = busqueda.trim();
+  if (q) {
+    query = query.or(`rfc.ilike.%${q}%,nombre_contribuyente.ilike.%${q}%`);
+  }
+
+  const { data, count, error } = await query;
+  if (error) throw error;
+
+  return {
+    efos: data || [],
+    total: count || 0,
+  };
+}
+

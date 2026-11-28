@@ -14,7 +14,7 @@ export async function buscarUsuarioPorCredenciales(usuario) {
             usuario: admin.usuario,
             nombre: 'Administrador WorkGuard',
             contrasena: admin.contrasena,
-            rol: 'administrador'
+            rol: 'admin'
         };
     }
 

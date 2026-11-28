@@ -5,7 +5,7 @@ import { enviarReporte, obtenerReportes, obtenerReporte } from '../controllers/r
 const router = Router();
 
 router.post('/', requiereSesion, requiereRol('consultor'), enviarReporte);
-router.get('/', requiereSesion, requiereRol('administrador'), obtenerReportes);
-router.get('/:id', requiereSesion, requiereRol('administrador'), obtenerReporte);
+router.get('/', requiereSesion, requiereRol('admin'), obtenerReportes);
+router.get('/:id', requiereSesion, requiereRol('admin'), obtenerReporte);
 
 export default router;

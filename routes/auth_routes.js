@@ -8,7 +8,7 @@ router.post('/login', login);
 router.post('/logout', requiereSesion, logout);
 router.get('/verificar', requiereSesion, verificarSesion);
 
-router.get('/panel-admin', requiereSesion, requiereRol('administrador'), (req, res) => {
+router.get('/panel-admin', requiereSesion, requiereRol('admin'), (req, res) => {
     res.json({ mensaje: 'Bienvenido al panel de Administrador', usuario: req.usuario });
 });
 

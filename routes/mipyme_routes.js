@@ -12,6 +12,7 @@ import {
   getDetalleMipyme,
   getSolicitudesMipymeAdmin,
   dictaminarMipyme,
+  getEfosSatAdmin,
 } from "../controllers/mipyme_controller.js";
 import { subirDocumentosMipyme } from "../middlewares/upload_middleware.js";
 import {
@@ -46,8 +47,9 @@ router.post( "/mi-perfil/fotos", requiereSesion,  requiereRol("mipyme"), uploadI
 router.delete("/mi-perfil/fotos/:idFoto",requiereSesion,requiereRol("mipyme"),deleteFotoEstablecimiento);
 
 // Gestion del Administrador
-router.get("/admin/solicitudes",requiereSesion,requiereRol("admin"),getSolicitudesMipymeAdmin);
-router.put("/admin/:id/dictamen",requiereSesion,requiereRol("admin"),dictaminarMipyme);
+router.get("/admin/solicitudes", requiereSesion, requiereRol("admin"), getSolicitudesMipymeAdmin);
+router.get("/admin/efos", requiereSesion, requiereRol("admin"), getEfosSatAdmin);
+router.put("/admin/:id/dictamen", requiereSesion, requiereRol("admin"), dictaminarMipyme);
 
 // Obtencion de la empresa
 router.get("/", requiereSesion, getMipymesPublicas);
