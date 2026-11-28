@@ -6,6 +6,7 @@ import reporteRoutes from './routes/reporte_routes.js';
 import mipymeRoutes from './routes/mipyme_routes.js';
 import listaNegraRoutes from './routes/lista_negra_routes.js';
 import usuarioRoutes from './routes/usuario_routes.js';
+import comentarioRoutes from "./routes/comentario_routes.js";
 
 export function crearApp() {
     const app = express();
@@ -30,6 +31,8 @@ export function crearApp() {
     app.use('/api/mipymes', mipymeRoutes);
     app.use('/api/reportes', reporteRoutes);
     app.use('/api/lista-negra', listaNegraRoutes);
+    app.use("/api/comentarios", comentarioRoutes);
+
 
     app.get('/', (req, res) => {
         res.json({ estado: 'API WorkGuard funcionando' });
