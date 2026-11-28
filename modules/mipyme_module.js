@@ -1,6 +1,6 @@
 import { supabase } from "../config/supabase.js";
 
-//Catalogos necesarios para selects
+// Catálogos necesarios para selects
 export async function obtenerCatalogosRegistro() {
   const [
     giros,
@@ -47,7 +47,7 @@ export async function obtenerCatalogosRegistro() {
   };
 }
 
-//Obitene el id para el tamaño de la empresa
+// Obtiene el id para el tamaño de la empresa
 export async function obtenerIdTamanoPorEtiqueta(etiquetaDof) {
   const { data, error } = await supabase
     .from("catalogo_tamano")
@@ -56,16 +56,16 @@ export async function obtenerIdTamanoPorEtiqueta(etiquetaDof) {
   if (error) throw error;
   if (!data || data.length === 0) return null;
 
-  const palabraClave = etiquetaDof.toLowerCase(); // 'micro', 'pequeña', 'mediana'
+  const palabraClave = etiquetaDof.toLowerCase();
   const encontrado = data.find((t) =>
-    t.opcion_tamano_empresa.toLowerCase().includes(palabraClave),
+    t.opcion_tamano_empresa.toLowerCase().includes(palabraClave)
   );
   return encontrado
     ? encontrado.id_catalogo_tamano
     : data[0].id_catalogo_tamano;
 }
 
-//Verifica duplicados de RFC y Nombre 
+// Verifica duplicados de RFC y Nombre
 export async function verificarDuplicadosPaso1(rfc, nombreComercial) {
   const [rfcRes, nombreRes] = await Promise.all([
     supabase
@@ -89,8 +89,7 @@ export async function verificarDuplicadosPaso1(rfc, nombreComercial) {
   };
 }
 
-
-//Verifica que la CURP no esté registrada ya en otro representante//
+// Verifica que la CURP no esté registrada ya en otro representante
 export async function verificarCurpDuplicada(curp) {
   const { data, error } = await supabase
     .from("representante")
@@ -102,7 +101,7 @@ export async function verificarCurpDuplicada(curp) {
   return Boolean(data);
 }
 
-//Verifica la duplicacion del usuario
+// Verifica la duplicación del usuario
 export async function verificarUsuarioDuplicado(usuario) {
   const [adminRes, consRes, mipymeRes] = await Promise.all([
     supabase
@@ -125,7 +124,7 @@ export async function verificarUsuarioDuplicado(usuario) {
   return Boolean(adminRes.data || consRes.data || mipymeRes.data);
 }
 
-//Consulta las listas negras
+// Consulta las listas negras
 export async function verificarListasNegras({
   rfc = "",
   curp = "",
@@ -147,7 +146,6 @@ export async function verificarListasNegras({
     }
   }
 
-  // Revisar sanciones activas en listado_negro interno
   const { data: sancionados, error: sancErr } = await supabase
     .from("listado_negro")
     .select(
@@ -160,7 +158,7 @@ export async function verificarListasNegras({
         existencia_fiscal ( rfc ),
         representante ( curp )
       )
-    `,
+    `
     )
     .eq("estado", "ACTIVA");
 
@@ -199,7 +197,7 @@ export async function verificarListasNegras({
   return { enListaNegra: false };
 }
 
-//Verifica que no haya intentado registrarse antes
+// Verifica intentos previos
 export async function obtenerIntentosRegistro(rfc, curp = "") {
   if (rfc) {
     const { data, error } = await supabase
@@ -224,7 +222,7 @@ export async function obtenerIntentosRegistro(rfc, curp = "") {
   return null;
 }
 
-//Registra los fallos para futuros registros
+// Registra fallos de validación
 export async function registrarFalloIntento({
   rfc,
   curp = null,
@@ -249,7 +247,7 @@ export async function registrarFalloIntento({
 
   const intentosPasoActual = nuevosConteos[columnaPaso];
   const bloqueado = Boolean(
-    actual?.bloqueado || esRojo || intentosPasoActual >= 3,
+    actual?.bloqueado || esRojo || intentosPasoActual >= 3
   );
   const motivoFinal = bloqueado
     ? esRojo
@@ -281,13 +279,12 @@ export async function registrarFalloIntento({
   };
 }
 
-
 export async function limpiarIntentosRegistro(rfc) {
   if (!rfc) return;
   await supabase.from("intentos_registro_mipyme").delete().eq("rfc", rfc);
 }
 
-//Crea la pyme con rollback por si algo falla
+// Crea la MiPyME en estado BORRADOR_PERFIL guardando URLs de QR en existencia_fiscal
 export async function crearRegistroMipymeCompleto(datos) {
   let idDomFiscal = null;
   let idExistencia = null;
@@ -306,7 +303,7 @@ export async function crearRegistroMipymeCompleto(datos) {
           numero: datos.domicilio_fiscal.numero,
           id_alcaldia_fiscal: Number(datos.domicilio_fiscal.id_alcaldia_fiscal),
           id_entidad_federativa_fiscal: Number(
-            datos.domicilio_fiscal.id_entidad_federativa_fiscal,
+            datos.domicilio_fiscal.id_entidad_federativa_fiscal
           ),
         },
       ])
@@ -315,7 +312,7 @@ export async function crearRegistroMipymeCompleto(datos) {
     if (errDomF) throw errDomF;
     idDomFiscal = domFiscal.id_domicilio_fiscal;
 
-    //Existencia Fiscal
+    // Existencia Fiscal (incluyendo url_qr_csf y url_qr_32d)
     const { data: existencia, error: errEx } = await supabase
       .from("existencia_fiscal")
       .insert([
@@ -325,6 +322,8 @@ export async function crearRegistroMipymeCompleto(datos) {
           rfc: datos.rfc,
           id_giro: Number(datos.id_giro),
           id_domicilio_fiscal: idDomFiscal,
+          url_qr_csf: datos.url_qr_csf || null,
+          url_qr_32d: datos.url_qr_32d || null,
         },
       ])
       .select("id_existencia_fiscal")
@@ -341,18 +340,17 @@ export async function crearRegistroMipymeCompleto(datos) {
           calle: datos.domicilio_operaciones.calle,
           numero: datos.domicilio_operaciones.numero,
           id_alcaldia_operaciones: Number(
-            datos.domicilio_operaciones.id_alcaldia_operaciones,
+            datos.domicilio_operaciones.id_alcaldia_operaciones
           ),
           id_entidad_federativa_operaciones: Number(
-            datos.domicilio_operaciones.id_entidad_federativa_operaciones,
+            datos.domicilio_operaciones.id_entidad_federativa_operaciones
           ),
         },
-      ])
-      .select("id_domicilio_operaciones")
+      ]).select("id_domicilio_operaciones")
       .single();
     if (errDomOp) throw errDomOp;
     idDomOp = domOp.id_domicilio_operaciones;
-    // Actividad (Redes sociales y sitio web opcionales)
+    // Actividad
     const { data: actividad, error: errAct } = await supabase
       .from("actividad")
       .insert([
@@ -367,7 +365,7 @@ export async function crearRegistroMipymeCompleto(datos) {
       .single();
     if (errAct) throw errAct;
     idActividad = actividad.id_actividad;
-    //Representante Legal / Titular
+    // Representante Legal / Titular
     const { data: representante, error: errRep } = await supabase
       .from("representante")
       .insert([
@@ -381,7 +379,7 @@ export async function crearRegistroMipymeCompleto(datos) {
       .single();
     if (errRep) throw errRep;
     idRepresentante = representante.id_representante;
-    //Tabla principal mipyme (Sello WorkGuard activo automáticamente al existir en esta tabla)
+    // Tabla principal mipyme (inicia en BORRADOR_PERFIL)
     const { data: nuevaMipyme, error: errMipyme } = await supabase
       .from("mipyme")
       .insert([
@@ -397,16 +395,16 @@ export async function crearRegistroMipymeCompleto(datos) {
           id_representante: idRepresentante,
           id_tamano: Number(datos.id_tamano),
           validado_denue: Boolean(datos.validado_denue),
+          estatus_verificacion: "BORRADOR_PERFIL",
         },
       ])
       .select(
-        "id_mipyme, nombre_comercial, usuario, tipo_persona, validado_denue",
+        "id_mipyme, nombre_comercial, usuario, tipo_persona, validado_denue, estatus_verificacion"
       )
       .single();
     if (errMipyme) throw errMipyme;
     return nuevaMipyme;
   } catch (error) {
-    // Rollback limpio si falla algún paso de inserción
     if (idRepresentante)
       await supabase
         .from("representante")
@@ -433,49 +431,178 @@ export async function crearRegistroMipymeCompleto(datos) {
   }
 }
 
+//CONSULTA de las empresas
 
-//Lista las mipymes que no esten en la lista negra
+// Lista ÚNICAMENTE las MiPyMEs con estatus 'APROBADA' y fuera de lista negra
 export async function listarMipymesAprobadas() {
   const [mipymesRes, sancionadasRes] = await Promise.all([
     supabase
-      .from('mipyme')
+      .from("mipyme")
       .select(
-        'id_mipyme, nombre_comercial, tipo_persona, numero_trabajadores, validado_denue, ' +
-        'existencia_fiscal ( rfc, catalogo_giro ( opcion_giro ) ), ' +
-        'domicilio_operaciones ( calle, numero, codigo_postal, catalogo_alcaldia_operaciones ( opcion_alcaldia ) ), ' +
-        'catalogo_tamano ( opcion_tamano_empresa ), ' +
-        'actividad ( pagina_web, facebook, instagram, twitter )'
+        "id_mipyme, nombre_comercial, tipo_persona, numero_trabajadores, validado_denue, descripcion, logo_url, estatus_verificacion, " +
+        "existencia_fiscal ( rfc, catalogo_giro ( opcion_giro ) ), " +
+        "domicilio_operaciones ( calle, numero, codigo_postal, catalogo_alcaldia_operaciones ( opcion_alcaldia ) ), " +
+        "catalogo_tamano ( opcion_tamano_empresa ), " +
+        "actividad ( pagina_web, facebook, instagram, twitter ), " +
+        "fotos_mipyme ( id_foto, url_imagen, orden )"
       )
-      .order('id_mipyme', { ascending: false }),
+      .eq("estatus_verificacion", "APROBADA")
+      .order("id_mipyme", { ascending: false }),
     supabase
-      .from('listado_negro')
-      .select('id_mipyme')
-      .eq('estado', 'ACTIVA')
+      .from("listado_negro")
+      .select("id_mipyme")
+      .eq("estado", "ACTIVA"),
   ]);
-
   if (mipymesRes.error) throw mipymesRes.error;
   if (sancionadasRes.error) throw sancionadasRes.error;
-
-  const idsSancionadas = new Set((sancionadasRes.data || []).map((s) => s.id_mipyme));
-  return (mipymesRes.data || []).filter((m) => !idsSancionadas.has(m.id_mipyme));
+  const idsSancionadas = new Set(
+    (sancionadasRes.data || []).map((s) => s.id_mipyme)
+  );
+  return (mipymesRes.data || [])
+    .filter((m) => !idsSancionadas.has(m.id_mipyme))
+    .map((m) => ({
+      ...m,
+      fotos_mipyme: (m.fotos_mipyme || []).sort((a, b) => a.orden - b.orden),
+    }));
 }
-
-
-//Detalle de la empresa
+// Detalle completo de una MiPyME (incluyendo fotos, QR URLs y estatus)
 export async function obtenerMipymePorId(idMipyme) {
   const { data, error } = await supabase
     .from("mipyme")
     .select(
       "id_mipyme, nombre_comercial, usuario, tipo_persona, numero_trabajadores, validado_denue, " +
-      "existencia_fiscal(rfc, representante_legal, catalogo_giro(opcion_giro), domicilio_fiscal(calle, numero, codigo_postal, catalogo_alcaldia_fiscal(opcion_alcaldia))), " +
+      "estatus_verificacion, motivo_rechazo, descripcion, logo_url, fecha_envio_revision, id_actividad, " +
+      "existencia_fiscal(rfc, representante_legal, url_qr_csf, url_qr_32d, catalogo_giro(opcion_giro), domicilio_fiscal(calle, numero, codigo_postal, catalogo_alcaldia_fiscal(opcion_alcaldia))), " +
       "domicilio_operaciones(calle, numero, codigo_postal, catalogo_alcaldia_operaciones(opcion_alcaldia)), " +
       "catalogo_tamano(opcion_tamano_empresa), " +
       "representante(nombre_completo, curp), " +
-      "actividad(pagina_web, facebook, instagram, twitter)"
+      "actividad(pagina_web, facebook, instagram, twitter), " +
+      "fotos_mipyme(id_foto, url_imagen, orden)"
     )
     .eq("id_mipyme", idMipyme)
     .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    ...data,
+    fotos_mipyme: (data.fotos_mipyme || []).sort((a, b) => a.orden - b.orden),
+  };
+}
 
+//GESTION del perfil de la empresa
+
+export async function subirImagenStorage(bucket, rutaArchivo, buffer, mimetype) {
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(rutaArchivo, buffer, {
+      contentType: mimetype,
+      upsert: true,
+    });
+  if (uploadError) throw uploadError;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(rutaArchivo);
+  return data.publicUrl;
+}
+export async function actualizarPerfilMipyme(
+  idMipyme,
+  { descripcion, logo_url, actividad, enviar_a_revision }
+) {
+  const actual = await obtenerMipymePorId(idMipyme);
+  if (!actual) return null;
+  // Actualizar redes/web en tabla actividad si existe
+  if (actual.id_actividad && actividad) {
+    const { error: errAct } = await supabase
+      .from("actividad")
+      .update({
+        pagina_web: actividad.pagina_web || null,
+        facebook: actividad.facebook || null,
+        instagram: actividad.instagram || null,
+        twitter: actividad.twitter || null,
+      })
+      .eq("id_actividad", actual.id_actividad);
+    if (errAct) throw errAct;
+  }
+  const updateMipyme = {
+    descripcion: descripcion !== undefined ? descripcion : actual.descripcion,
+    logo_url: logo_url !== undefined ? logo_url : actual.logo_url,
+  };
+  if (enviar_a_revision) {
+    updateMipyme.estatus_verificacion = "PENDIENTE_REVISION";
+    updateMipyme.motivo_rechazo = null;
+    updateMipyme.fecha_envio_revision = new Date().toISOString();
+  }
+  const { error: errMip } = await supabase
+    .from("mipyme")
+    .update(updateMipyme)
+    .eq("id_mipyme", idMipyme);
+  if (errMip) throw errMip;
+  return obtenerMipymePorId(idMipyme);
+}
+export async function guardarFotoEstablecimiento(idMipyme, orden, urlImagen) {
+  const { data, error } = await supabase
+    .from("fotos_mipyme")
+    .upsert(
+      {
+        id_mipyme: idMipyme,
+        orden: Number(orden),
+        url_imagen: urlImagen,
+        fecha_subida: new Date().toISOString(),
+      },
+      { onConflict: "id_mipyme,orden" }
+    )
+    .select("*")
+    .single();
   if (error) throw error;
   return data;
+}
+export async function eliminarFotoEstablecimiento(idMipyme, idFoto) {
+  const { error } = await supabase
+    .from("fotos_mipyme")
+    .delete()
+    .eq("id_mipyme", idMipyme)
+    .eq("id_foto", idFoto);
+  if (error) throw error;
+}
+
+//GESTION del Admin
+
+export async function listarSolicitudesAdmin() {
+  const { data, error } = await supabase
+    .from("mipyme")
+    .select(
+      "id_mipyme, nombre_comercial, usuario, tipo_persona, numero_trabajadores, validado_denue, " +
+      "estatus_verificacion, motivo_rechazo, descripcion, logo_url, fecha_envio_revision, " +
+      "existencia_fiscal(rfc, representante_legal, url_qr_csf, url_qr_32d, catalogo_giro(opcion_giro), domicilio_fiscal(calle, numero, codigo_postal, catalogo_alcaldia_fiscal(opcion_alcaldia))), " +
+      "domicilio_operaciones(calle, numero, codigo_postal, catalogo_alcaldia_operaciones(opcion_alcaldia)), " +
+      "catalogo_tamano(opcion_tamano_empresa), " +
+      "representante(nombre_completo, curp), " +
+      "actividad(pagina_web, facebook, instagram, twitter), " +
+      "fotos_mipyme(id_foto, url_imagen, orden)"
+    )
+    .neq("estatus_verificacion", "BORRADOR_PERFIL")
+    .order("fecha_envio_revision", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data || []).map((m) => ({
+    ...m,
+    fotos_mipyme: (m.fotos_mipyme || []).sort((a, b) => a.orden - b.orden),
+  }));
+}
+export async function dictaminarSolicitudMipyme(
+  idMipyme,
+  { aprobar, motivo_rechazo }
+) {
+  const payload = aprobar
+    ? {
+      estatus_verificacion: "APROBADA",
+      motivo_rechazo: null,
+    }
+    : {
+      estatus_verificacion: "RECHAZADA",
+      motivo_rechazo: motivo_rechazo,
+    };
+  const { error } = await supabase
+    .from("mipyme")
+    .update(payload)
+    .eq("id_mipyme", idMipyme);
+  if (error) throw error;
+  return obtenerMipymePorId(idMipyme);
 }
