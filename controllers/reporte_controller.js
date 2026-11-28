@@ -31,7 +31,7 @@ export async function enviarReporte(req, res) {
     try {
         const idReporte = await crearReporte({
             idMipyme,
-            idConsultor: req.session.usuario.id,
+            idConsultor: req.usuario.id,
             motivo,
             descripcion
         });

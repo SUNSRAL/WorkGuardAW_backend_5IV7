@@ -29,7 +29,7 @@ export async function enviarEmpresaAListaNegra(req, res) {
     try {
         const resultado = await enviarALaListaNegra({
             idReporte,
-            idAdministrador: req.session.usuario.id,
+            idAdministrador: req.usuario.id,
             motivo
         });
         if (resultado === 'no_existe') return res.status(404).json({ error: 'El reporte no existe.' });

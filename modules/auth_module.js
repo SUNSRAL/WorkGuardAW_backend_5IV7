@@ -1,29 +1,29 @@
 import { supabase } from '../config/supabase.js';
 
 export async function buscarUsuarioPorCredenciales(usuario) {
-    const { data: admin, error: errAdmin } = await supabase
+    // 1. Buscar en administrador
+    const { data: admin } = await supabase
         .from('administrador')
         .select('id_administrador, usuario, contrasena')
         .eq('usuario', usuario)
         .maybeSingle();
-    if (errAdmin) throw errAdmin;
 
     if (admin) {
         return {
             id: admin.id_administrador,
             usuario: admin.usuario,
-            nombre: 'Administrador',
+            nombre: 'Administrador WorkGuard',
             contrasena: admin.contrasena,
-            rol: 'administrador'
+            rol: 'admin'
         };
     }
 
-    const { data: consultor, error: errCons } = await supabase
+    // 2. Buscar en consultor
+    const { data: consultor } = await supabase
         .from('consultor')
-        .select('id_consultor, usuario, contrasena, nombre_completo')
+        .select('id_consultor, usuario, nombre_completo, contrasena')
         .eq('usuario', usuario)
         .maybeSingle();
-    if (errCons) throw errCons;
 
     if (consultor) {
         return {
@@ -35,12 +35,12 @@ export async function buscarUsuarioPorCredenciales(usuario) {
         };
     }
 
-    const { data: mipyme, error: errMipyme } = await supabase
+    // 3. Buscar en mipyme
+    const { data: mipyme } = await supabase
         .from('mipyme')
-        .select('id_mipyme, usuario, contrasena, nombre_comercial')
+        .select('id_mipyme, usuario, nombre_comercial, contrasena')
         .eq('usuario', usuario)
         .maybeSingle();
-    if (errMipyme) throw errMipyme;
 
     if (mipyme) {
         return {
