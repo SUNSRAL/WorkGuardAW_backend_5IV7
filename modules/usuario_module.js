@@ -70,3 +70,72 @@ export async function guardarFotoPerfil(idConsultor, archivo) {
     if (error) throw error;
     return consultor;
 }
+
+export async function listarFavoritosConsultor(idConsultor) {
+  const { data, error } = await supabase
+    .from("favorito_mipyme")
+    .select(`
+      id_favorito,
+      fecha_guardado,
+      mipyme:id_mipyme (
+        id_mipyme,
+        nombre_comercial,
+        descripcion,
+        logo_url,
+        numero_trabajadores,
+        estatus_verificacion,
+        catalogo_tamano ( opcion_tamano_empresa ),
+        existencia_fiscal (
+          catalogo_giro ( opcion_giro )
+        ),
+        fotos_mipyme ( url_imagen, orden )
+      )
+    `)
+    .eq("id_consultor", Number(idConsultor))
+    .order("fecha_guardado", { ascending: false });
+
+  if (error) throw error;
+  return (data || []).map((row) => row.mipyme).filter(Boolean);
+}
+
+export async function verificarFavorito({ idConsultor, idMipyme }) {
+  const { data, error } = await supabase
+    .from("favorito_mipyme")
+    .select("id_favorito")
+    .eq("id_consultor", Number(idConsultor))
+    .eq("id_mipyme", Number(idMipyme))
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function toggleFavoritoMipyme({ idConsultor, idMipyme }) {
+  const idCons = Number(idConsultor);
+  const idEmp = Number(idMipyme);
+
+  const { data: existente, error: errBusq } = await supabase
+    .from("favorito_mipyme")
+    .select("id_favorito")
+    .eq("id_consultor", idCons)
+    .eq("id_mipyme", idEmp)
+    .maybeSingle();
+
+  if (errBusq) throw errBusq;
+
+  if (existente) {
+    const { error: errDel } = await supabase
+      .from("favorito_mipyme")
+      .delete()
+      .eq("id_favorito", existente.id_favorito);
+    if (errDel) throw errDel;
+    return { guardado: false };
+  }
+
+  const { error: errIns } = await supabase
+    .from("favorito_mipyme")
+    .insert({ id_consultor: idCons, id_mipyme: idEmp });
+  if (errIns) throw errIns;
+
+  return { guardado: true };
+}
