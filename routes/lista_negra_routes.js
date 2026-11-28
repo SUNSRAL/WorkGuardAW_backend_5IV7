@@ -7,4 +7,5 @@ const router = Router();
 router.get('/', requiereSesion, requiereRol('admin', 'consultor'), obtenerListaNegra);
 router.post('/reportes/:idReporte', requiereSesion, requiereRol('admin'), enviarEmpresaAListaNegra);
 
+
 export default router;
