@@ -9,7 +9,7 @@ router.post('/logout', requiereSesion, logout);
 router.get('/verificar', requiereSesion, verificarSesion);
 
 router.get('/panel-admin', requiereSesion, requiereRol('admin'), (req, res) => {
-    res.json({ mensaje: 'Bienvenido al panel de Administrador', usuario: req.usuario });
+res.json({ mensaje: 'Bienvenido al panel de Administrador', usuario: req.usuario });
 });
 
 router.get('/panel-consultor', requiereSesion, requiereRol('consultor'), (req, res) => {
