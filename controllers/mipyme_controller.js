@@ -589,6 +589,37 @@ export async function evaluarPasoMipyme(req, res) {
             "La calle del domicilio fiscal no coincide con la asentada en tu Constancia de Situación Fiscal.",
         });
       }
+      // Cruce del Giro Comercial seleccionado contra "Actividades Económicas" de la Constancia SAT
+      const nombreGiroSeleccionado = await obtenerNombreGiroPorId(id_giro);
+      if (nombreGiroSeleccionado) {
+        const idxActividades = textoNormalizado.indexOf("ACTIVIDADES ECONOMICAS");
+        const textoActividades =
+          idxActividades !== -1
+            ? textoNormalizado.slice(idxActividades, idxActividades + 2000)
+            : textoNormalizado;
+
+        const stopWordsGiro = new Set([
+          "COMERCIO", "SERVICIOS", "POR", "MENOR", "MAYOR", "PARA",
+          "PRODUCTOS", "ARTICULOS", "EQUIPO", "OTROS", "GENERAL", "PRIVADA"
+        ]);
+        const palabrasClaveGiro = normalizarTexto(nombreGiroSeleccionado)
+          .split(" ")
+          .filter((w) => w.length >= 5 && !stopWordsGiro.has(w));
+
+        if (
+          palabrasClaveGiro.length > 0 &&
+          !palabrasClaveGiro.some((palabra) => textoActividades.includes(palabra))
+        ) {
+          return responderFalloPaso(res, {
+            rfc: rfcLimpio,
+            nombreComercial,
+            paso: 1,
+            esRojo: false,
+            mensaje: `El Giro Comercial seleccionado ("${nombreGiroSeleccionado}") no coincide con las Actividades Económicas registradas en tu Constancia de Situación Fiscal.`,
+          });
+        }
+      }
+
       const contenidoQr = await leerQrDePdf(docCsf.buffer);
       const qrValido = contenidoQr
         ? validarUrlQrSat(contenidoQr, "CSF", rfcLimpio)
